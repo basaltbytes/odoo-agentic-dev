@@ -139,6 +139,9 @@ describe("runInteractivePassthrough", () => {
       ],
       cwd: rootDir,
     });
+    // interactive compose children get the context env too (project-supplied
+    // compose files interpolate ${ODOO_DATABASE:?} and friends)
+    expect(recording.calls.at(-1)!.env?.ODOO_DATABASE).toBe(ctx.databaseName);
   });
 
   it("leaves the exit code alone on success", async () => {

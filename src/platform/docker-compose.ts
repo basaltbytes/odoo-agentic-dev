@@ -16,6 +16,12 @@ export type ComposeRef = {
   readonly projectName: string;
   readonly composeFile: string;
   readonly projectDir: string;
+  /**
+   * Context env handed to every compose subprocess (merged over the parent
+   * env): project-supplied compose files interpolate `${ODOO_DATABASE:?}` /
+   * `${ODOO_HTTP_PORT:?}` and would fail without it.
+   */
+  readonly env: Record<string, string>;
 };
 
 export const composeArgs = (ref: ComposeRef, rest: ReadonlyArray<string>): Array<string> => [
@@ -178,7 +184,7 @@ export const DockerComposeLive = Layer.effect(
      */
     const exec = (ref: ComposeRef, argv: ReadonlyArray<string>, stdin?: string) =>
       runner
-        .run({ command: "docker", args: argv, cwd: ref.projectDir, stdin })
+        .run({ command: "docker", args: argv, cwd: ref.projectDir, env: ref.env, stdin })
         .pipe(Effect.mapError(toComposeError(argv)));
 
     const tryRun = (ref: ComposeRef, args: ReadonlyArray<string>) =>
@@ -310,6 +316,7 @@ export const DockerComposeLive = Layer.effect(
               projectName: ctx.composeProjectName,
               composeFile: file,
               projectDir: ctx.rootDir,
+              env: ctx.env,
             };
           }
           const file = join(ctx.rootDir, GENERATED_COMPOSE_RELATIVE_PATH);
@@ -329,6 +336,7 @@ export const DockerComposeLive = Layer.effect(
             projectName: ctx.composeProjectName,
             composeFile: file,
             projectDir: ctx.rootDir,
+            env: ctx.env,
           };
         }),
 
@@ -340,16 +348,18 @@ export const DockerComposeLive = Layer.effect(
 
       stream: (ref, args) => {
         const argv = composeArgs(ref, args);
-        return runner.runInherited({ command: "docker", args: argv, cwd: ref.projectDir }).pipe(
-          Effect.mapError(toComposeError(argv)),
-          Effect.flatMap((code) =>
-            code === 0
-              ? Effect.void
-              : Effect.fail(
-                  new ComposeCommandError({ args: argv, exitCode: code, stderrTail: "" }),
-                ),
-          ),
-        );
+        return runner
+          .runInherited({ command: "docker", args: argv, cwd: ref.projectDir, env: ref.env })
+          .pipe(
+            Effect.mapError(toComposeError(argv)),
+            Effect.flatMap((code) =>
+              code === 0
+                ? Effect.void
+                : Effect.fail(
+                    new ComposeCommandError({ args: argv, exitCode: code, stderrTail: "" }),
+                  ),
+            ),
+          );
       },
 
       waitForDb: (ref, dbService, options) => {

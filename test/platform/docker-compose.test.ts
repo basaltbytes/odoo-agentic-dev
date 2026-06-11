@@ -60,7 +60,10 @@ describe("parseLabeledPs", () => {
 describe("composeArgs", () => {
   it("builds the canonical docker compose argv", () => {
     expect(
-      composeArgs({ projectName: "p", composeFile: "/f.yml", projectDir: "/root" }, ["up", "-d"]),
+      composeArgs({ projectName: "p", composeFile: "/f.yml", projectDir: "/root", env: {} }, [
+        "up",
+        "-d",
+      ]),
     ).toEqual(["compose", "-p", "p", "-f", "/f.yml", "--project-directory", "/root", "up", "-d"]);
   });
 });
@@ -302,6 +305,27 @@ describe("DockerComposeLive", () => {
       command: "docker",
       args: ["ps", "-a", "--filter", "label=dev.basaltbytes.oad=1", "--format", "json"],
     });
+  });
+
+  it("compose subprocesses receive the context env (project-supplied files interpolate it)", async () => {
+    const { ctx, recipe, recording, run } = makeEnv();
+    await run(
+      Effect.gen(function* () {
+        const dc = yield* DockerCompose;
+        const ref = yield* dc.prepareComposeFile(recipe, ctx);
+        expect(ref.env).toEqual(ctx.env);
+        yield* dc.run(ref, ["up", "-d", "odoo"]);
+        yield* dc.tryRun(ref, ["ps"]);
+        yield* dc.stream(ref, ["stop", "odoo"]);
+        yield* dc.waitForDb(ref, "db", { intervalMillis: 1, maxAttempts: 1 });
+      }),
+    );
+    const composeCalls = recording.calls.filter((call) => call.args[0] === "compose");
+    expect(composeCalls.length).toBeGreaterThanOrEqual(4);
+    for (const call of composeCalls) {
+      expect(call.env?.ODOO_DATABASE).toBe(ctx.databaseName);
+      expect(call.env?.ODOO_HTTP_PORT).toBe(String(ctx.odooHttpPort));
+    }
   });
 
   it("waitForDb polls pg_isready until success", async () => {

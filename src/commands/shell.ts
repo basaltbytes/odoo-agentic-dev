@@ -46,6 +46,7 @@ export const runInteractivePassthrough = (
       command: "docker",
       args: composeArgs(ref, args),
       cwd: ref.projectDir,
+      env: ref.env,
     });
     if (exitCode !== 0) {
       process.exitCode = exitCode;

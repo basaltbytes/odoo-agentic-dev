@@ -346,6 +346,8 @@ At the end of `up` and `setup`, the registry is checked for dead environments of
 
 The generated Compose file binds Odoo to the loopback interface only (`127.0.0.1:<port>:8069`): another machine on your LAN can never reach a dev Odoo by default. To expose a stack deliberately, supply your own compose file via the recipe's `compose.file` with the port mapping you want (for example `"0.0.0.0:8069:8069"`) — deliberate exposure is a project decision, not a CLI flag.
 
+Every compose subprocess runs with the full context env exported (the same variables `info --env` prints, merged over the parent environment), so a project-supplied compose file can interpolate `${ODOO_DATABASE:?}` or `${ODOO_HTTP_PORT:?}` directly.
+
 ## Environment Variables
 
 | Variable | Meaning |
