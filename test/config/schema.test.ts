@@ -55,6 +55,27 @@ describe("normalizeConfig", () => {
     expect(cfg.cleanup).toEqual({ maxAgeDays: 30, auto: false });
   });
 
+  it("defaults project.stripBranchPrefixes to the built-in type segments", () => {
+    expect(runSyncSuccess(normalized(minimal)).project.stripBranchPrefixes).toEqual([
+      "feature",
+      "feat",
+      "bugfix",
+      "bug",
+      "hotfix",
+      "fix",
+      "chore",
+      "task",
+    ]);
+    expect(
+      runSyncSuccess(
+        normalized({
+          ...minimal,
+          project: { ...minimal.project, stripBranchPrefixes: ["release"] },
+        }),
+      ).project.stripBranchPrefixes,
+    ).toEqual(["release"]);
+  });
+
   it("defaults ports.hashAlgorithm to fnv1a32 and honors posix-cksum", () => {
     expect(runSyncSuccess(normalized(minimal)).ports.hashAlgorithm).toBe("fnv1a32");
     expect(

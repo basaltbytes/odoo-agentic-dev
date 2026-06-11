@@ -67,6 +67,7 @@ export const buildWorktreeContext = (options: {
       dbPrefix: recipe.project.dbPrefix,
       sharedDatabase: recipe.project.sharedDatabase,
       sharedBranches: recipe.project.sharedBranches,
+      stripBranchPrefixes: recipe.project.stripBranchPrefixes,
       envDatabase,
     });
 

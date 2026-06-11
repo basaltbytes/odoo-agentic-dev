@@ -97,6 +97,27 @@ describe("buildWorktreeContext", () => {
   it("shared branch uses the shared database", () => {
     expect(runSyncSuccess(build(onBranch("main"))).databaseName).toBe("kl_e2e_demo");
   });
+
+  it("threads project.stripBranchPrefixes into database derivation", () => {
+    const custom = makeRecipe({
+      project: { id: "kriss-laure", dbPrefix: "kl", stripBranchPrefixes: ["release"] },
+      odoo: {
+        version: "18.0",
+        addons: [{ host: "backend/addons/Custom", container: "/mnt/extra-addons/Custom" }],
+      },
+    });
+    const buildCustom = (branch: string) =>
+      buildWorktreeContext({
+        rootDir: "/work/kriss-laure",
+        recipe: custom,
+        env: {},
+        git: onBranch(branch),
+      });
+    expect(runSyncSuccess(buildCustom("release/checkout")).databaseName).toBe("kl_checkout");
+    expect(runSyncSuccess(buildCustom("feature/checkout")).databaseName).toBe(
+      "kl_feature_checkout",
+    );
+  });
 });
 
 describe("substituteEnvTokens", () => {

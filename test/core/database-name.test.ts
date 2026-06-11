@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   DB_NAME_PATTERN,
+  DEFAULT_STRIP_BRANCH_PREFIXES,
   deriveDatabaseName,
   sanitizeNamePart,
 } from "../../src/core/database-name.js";
@@ -12,6 +13,7 @@ const base = {
   dbPrefix: "kl",
   sharedDatabase: "kl_e2e_demo" as string | null,
   sharedBranches: ["main", "master", "dev", "develop", "development"] as ReadonlyArray<string>,
+  stripBranchPrefixes: DEFAULT_STRIP_BRANCH_PREFIXES,
   envDatabase: undefined as string | undefined,
 };
 
@@ -39,6 +41,40 @@ describe("deriveDatabaseName", () => {
     expect(runSyncSuccess(deriveDatabaseName({ ...base, branch: "alice/fix-1" }))).toBe(
       "kl_alice_fix_1",
     );
+  });
+
+  it("strips at most one leading type segment (bash `case feature/*)` parity)", () => {
+    // the bash being reproduced strips exactly one prefix, so feature/fix/x keeps "fix"
+    expect(runSyncSuccess(deriveDatabaseName({ ...base, branch: "feature/fix/x" }))).toBe(
+      "kl_fix_x",
+    );
+    expect(runSyncSuccess(deriveDatabaseName({ ...base, branch: "fix/feature/x" }))).toBe(
+      "kl_feature_x",
+    );
+  });
+
+  it("honors a custom stripBranchPrefixes list", () => {
+    const custom = { ...base, stripBranchPrefixes: ["release"] as ReadonlyArray<string> };
+    expect(runSyncSuccess(deriveDatabaseName({ ...custom, branch: "release/2025-06" }))).toBe(
+      "kl_2025_06",
+    );
+    // the built-in defaults no longer apply once the list is customized
+    expect(runSyncSuccess(deriveDatabaseName({ ...custom, branch: "feature/checkout" }))).toBe(
+      "kl_feature_checkout",
+    );
+  });
+
+  it("exposes the default prefix list used by the bash tooling", () => {
+    expect(DEFAULT_STRIP_BRANCH_PREFIXES).toEqual([
+      "feature",
+      "feat",
+      "bugfix",
+      "bug",
+      "hotfix",
+      "fix",
+      "chore",
+      "task",
+    ]);
   });
 
   it("uses the shared database for shared branches", () => {

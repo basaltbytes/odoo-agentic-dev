@@ -12,8 +12,8 @@ const MAX_DB_NAME_LENGTH = 63;
  */
 const DERIVED_NAME_BUDGET = 58;
 
-/** Leading branch path segments dropped before deriving a name. */
-const TYPE_SEGMENTS = new Set([
+/** Default leading branch type segments dropped (once) before deriving a name. */
+export const DEFAULT_STRIP_BRANCH_PREFIXES: ReadonlyArray<string> = [
   "feature",
   "feat",
   "bugfix",
@@ -22,7 +22,7 @@ const TYPE_SEGMENTS = new Set([
   "fix",
   "chore",
   "task",
-]);
+];
 
 export const sanitizeNamePart = (raw: string): string =>
   raw
@@ -47,6 +47,7 @@ export const deriveDatabaseName = (options: {
   readonly dbPrefix: string;
   readonly sharedDatabase: string | null;
   readonly sharedBranches: ReadonlyArray<string>;
+  readonly stripBranchPrefixes: ReadonlyArray<string>;
   readonly envDatabase: string | undefined;
 }): Effect.Effect<string, UnsafeDatabaseNameError> => {
   if (options.envDatabase !== undefined) return assertSafeDatabaseName(options.envDatabase);
@@ -61,7 +62,10 @@ export const deriveDatabaseName = (options: {
 
   const seed = options.branch ?? options.worktreeName;
   const segments = seed.split("/");
-  while (segments.length > 1 && TYPE_SEGMENTS.has(segments[0]!.toLowerCase())) segments.shift();
+  // strip AT MOST one leading type segment — the bash `case feature/*|fix/*)`
+  // this reproduces matches a single prefix, so feature/fix/x keeps "fix"
+  const prefixes = options.stripBranchPrefixes.map((prefix) => prefix.toLowerCase());
+  if (segments.length > 1 && prefixes.includes(segments[0]!.toLowerCase())) segments.shift();
   let body = sanitizeNamePart(segments.join("/"));
   if (body.length === 0) body = sanitizeNamePart(options.worktreeName);
 

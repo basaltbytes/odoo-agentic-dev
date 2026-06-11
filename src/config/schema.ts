@@ -2,6 +2,7 @@ import { Effect, Schema } from "effect";
 import { ConfigValidationError } from "../errors/errors.js";
 import type { OdooAgenticDevConfig, OdooAgenticDevConfigInput } from "../core/project-recipe.js";
 import { CANONICAL_ENV_VARS } from "../core/project-recipe.js";
+import { DEFAULT_STRIP_BRANCH_PREFIXES } from "../core/database-name.js";
 
 const AddonMountSchema = Schema.Struct({
   host: Schema.String,
@@ -40,6 +41,7 @@ const ConfigInputSchema = Schema.Struct({
     dbPrefix: Schema.String,
     sharedDatabase: Schema.optional(Schema.String),
     sharedBranches: Schema.optional(Schema.Array(Schema.String)),
+    stripBranchPrefixes: Schema.optional(Schema.Array(Schema.String)),
   }),
   ports: Schema.optional(
     Schema.Struct({
@@ -183,6 +185,7 @@ export const normalizeConfig = (
       sharedBranches:
         input.project.sharedBranches ??
         (input.project.sharedDatabase !== undefined ? ["main", "master"] : []),
+      stripBranchPrefixes: input.project.stripBranchPrefixes ?? DEFAULT_STRIP_BRANCH_PREFIXES,
     },
     ports,
     odoo: {

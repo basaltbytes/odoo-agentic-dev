@@ -120,6 +120,8 @@ export default defineConfig({
 
 Ports are derived from a hash of the database name modulo `ports.range`. The default hash is FNV-1a 32-bit (`hashAlgorithm: "fnv1a32"`); set `hashAlgorithm: "posix-cksum"` to reproduce the POSIX `cksum` CRC so a project migrating from bash tooling that derives ports via `cksum <<< "$db"` keeps the exact same port per database.
 
+Database names are derived from the branch: at most **one** leading type segment (`feature`, `feat`, `bugfix`, `bug`, `hotfix`, `fix`, `chore`, `task`) is stripped — `feature/fix/x` becomes `<dbPrefix>_fix_x` — then the remainder is sanitized and prefixed with `project.dbPrefix`. Set `project.stripBranchPrefixes` (for example `["release"]`) to replace the built-in list.
+
 Then:
 
 ```bash

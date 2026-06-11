@@ -49,6 +49,8 @@ export type OdooProjectConfig = {
   readonly dbPrefix: string;
   readonly sharedDatabase?: string;
   readonly sharedBranches?: ReadonlyArray<string>;
+  /** leading branch type segments stripped (at most one) before deriving the database name */
+  readonly stripBranchPrefixes?: ReadonlyArray<string>;
 };
 
 export type OdooRuntimeConfig = {
@@ -111,6 +113,7 @@ export type OdooAgenticDevConfig = {
     readonly dbPrefix: string;
     readonly sharedDatabase: string | null;
     readonly sharedBranches: ReadonlyArray<string>;
+    readonly stripBranchPrefixes: ReadonlyArray<string>;
   };
   readonly ports: {
     readonly odooBase: number;
