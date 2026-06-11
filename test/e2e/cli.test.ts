@@ -46,7 +46,9 @@ export default {
     expect(run(["info", "--json"], { ODOO_WORKTREE_NAME: "feature/demo" })).toBe(a);
   });
 
-  it("never leaks the sqlite ExperimentalWarning (builtins evaluate before user modules)", () => {
+  // 120s budget: cold Windows CI runners have been observed taking 45s+ to
+  // first-spawn node + sqlite WAL on a temp path (global timeout is 20s)
+  it("never leaks the sqlite ExperimentalWarning (builtins evaluate before user modules)", { timeout: 120_000 }, () => {
     // `list --all-projects` builds StateStoreLive (loads node:sqlite) and
     // degrades gracefully without docker, so it runs anywhere
     const result = spawnSync("node", [CLI, "list", "--all-projects"], {
