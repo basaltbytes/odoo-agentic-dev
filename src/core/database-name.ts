@@ -4,6 +4,13 @@ import { UnsafeDatabaseNameError } from "../errors/errors.js";
 
 export const DB_NAME_PATTERN = /^[a-z][a-z0-9_]*$/;
 const MAX_DB_NAME_LENGTH = 63;
+/**
+ * Derived names are capped below PostgreSQL's 63 so the 5-char `__tpl`
+ * template suffix still fits. Explicit env overrides keep the full 63 budget
+ * (template snapshots are skipped for names longer than this — see
+ * decideResetPath in core/environment.ts).
+ */
+const DERIVED_NAME_BUDGET = 58;
 
 /** Leading branch path segments dropped before deriving a name. */
 const TYPE_SEGMENTS = new Set([
@@ -27,7 +34,7 @@ const sha8 = (input: string): string =>
   createHash("sha256").update(input).digest("hex").slice(0, 8);
 
 const truncate = (name: string): string =>
-  name.length <= MAX_DB_NAME_LENGTH ? name : `${name.slice(0, 54)}_${sha8(name)}`;
+  name.length <= DERIVED_NAME_BUDGET ? name : `${name.slice(0, 49)}_${sha8(name)}`;
 
 const assertSafeDatabaseName = (name: string): Effect.Effect<string, UnsafeDatabaseNameError> =>
   name.length === 0 || name.length > MAX_DB_NAME_LENGTH || !DB_NAME_PATTERN.test(name)

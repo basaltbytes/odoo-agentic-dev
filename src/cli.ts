@@ -1,4 +1,7 @@
 #!/usr/bin/env node
+// must stay first: installs the node:sqlite ExperimentalWarning filter before
+// any import that could transitively load node:sqlite (imports hoist)
+import "./suppress-sqlite-warning.js";
 import { Cause, Console, Effect, Layer } from "effect";
 import { CliError, Command } from "effect/unstable/cli";
 import { NodeRuntime, NodeServices } from "@effect/platform-node";

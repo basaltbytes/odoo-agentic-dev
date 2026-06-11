@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   CommandFailedError,
   ConfigValidationError,
+  PortConflictError,
   SharedDatabaseProtectionError,
+  StateError,
   isRuntimeError,
   renderError,
 } from "../../src/errors/errors.js";
@@ -39,8 +41,36 @@ describe("renderError", () => {
     expect(text).toContain("b bad");
   });
 
+  it("renders state registry errors with the override env var as next action", () => {
+    const error = new StateError({ reason: "disk I/O error" });
+    expect(error.message).toContain("disk I/O error");
+    const text = renderError(error);
+    expect(text).toContain("disk I/O error");
+    expect(text).toContain("ODOO_AGENTIC_DEV_STATE_DB");
+  });
+
+  it("renders port conflicts naming the holder stack when known", () => {
+    const text = renderError(new PortConflictError({ port: 10018, holder: "kl_feature_x" }));
+    expect(text).toContain("10018");
+    expect(text).toContain("kl_feature_x");
+    expect(text).toContain("ODOO_HTTP_PORT");
+    expect(text).toContain("odoo-agentic-dev prune");
+  });
+
+  it("renders port conflicts without a known holder", () => {
+    const error = new PortConflictError({ port: 10018, holder: null });
+    expect(error.message).toContain("10018");
+    const text = renderError(error);
+    expect(text).toContain("10018");
+    expect(text).not.toContain("null");
+    expect(text).toContain("ODOO_HTTP_PORT");
+    expect(text).toContain("odoo-agentic-dev prune");
+  });
+
   it("isRuntimeError discriminates", () => {
     expect(isRuntimeError(new ConfigValidationError({ issues: [] }))).toBe(true);
+    expect(isRuntimeError(new StateError({ reason: "x" }))).toBe(true);
+    expect(isRuntimeError(new PortConflictError({ port: 1, holder: null }))).toBe(true);
     expect(isRuntimeError(new Error("nope"))).toBe(false);
   });
 });

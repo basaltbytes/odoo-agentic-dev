@@ -66,14 +66,24 @@ describe("deriveDatabaseName", () => {
     );
   });
 
-  it("truncates long names to 63 chars with a stable hash suffix", () => {
+  it("truncates long derived names to 58 chars (template-suffix headroom) with a stable hash", () => {
     const branch = "feature/" + "very-long-segment-".repeat(8);
     const name = runSyncSuccess(deriveDatabaseName({ ...base, branch }));
     const again = runSyncSuccess(deriveDatabaseName({ ...base, branch }));
-    expect(name).toHaveLength(63);
+    expect(name).toHaveLength(58);
     expect(name).toBe(again);
     expect(name).toMatch(DB_NAME_PATTERN);
-    expect(name.slice(54, 55)).toBe("_");
+    expect(name.slice(49, 50)).toBe("_");
+  });
+
+  it("keeps explicit env overrides up to 63 chars (no template headroom enforced)", () => {
+    const long = "a".repeat(63);
+    expect(runSyncSuccess(deriveDatabaseName({ ...base, branch: "main", envDatabase: long }))).toBe(
+      long,
+    );
+    expect(
+      runSyncFailure(deriveDatabaseName({ ...base, branch: "main", envDatabase: "a".repeat(64) })),
+    ).toBeInstanceOf(UnsafeDatabaseNameError);
   });
 
   it("derived names always match the safety pattern", () => {

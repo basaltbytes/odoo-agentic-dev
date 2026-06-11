@@ -104,6 +104,26 @@ export class SourceResolverError extends Data.TaggedError("SourceResolverError")
   }
 }
 
+export class StateError extends Data.TaggedError("StateError")<{
+  readonly reason: string;
+}> {
+  override get message(): string {
+    return this.reason;
+  }
+}
+
+export class PortConflictError extends Data.TaggedError("PortConflictError")<{
+  readonly port: number;
+  /** compose project holding the port, when the state registry knows it */
+  readonly holder: string | null;
+}> {
+  override get message(): string {
+    return this.holder === null
+      ? `port ${this.port} is already in use`
+      : `port ${this.port} is already in use by "${this.holder}"`;
+  }
+}
+
 export type RuntimeError =
   | ConfigLoadError
   | ConfigValidationError
@@ -115,7 +135,9 @@ export type RuntimeError =
   | ComposeCommandError
   | OdooCommandError
   | CompanionProcessError
-  | SourceResolverError;
+  | SourceResolverError
+  | StateError
+  | PortConflictError;
 
 const RUNTIME_ERROR_TAGS: ReadonlySet<string> = new Set([
   "ConfigLoadError",
@@ -129,6 +151,8 @@ const RUNTIME_ERROR_TAGS: ReadonlySet<string> = new Set([
   "OdooCommandError",
   "CompanionProcessError",
   "SourceResolverError",
+  "StateError",
+  "PortConflictError",
 ]);
 
 export const isRuntimeError = (u: unknown): u is RuntimeError =>
@@ -202,6 +226,20 @@ export const renderError = (error: RuntimeError): string => {
       return lines(
         `Could not resolve Odoo source: ${error.reason}`,
         "Next: pass --target <path> or set odoo.source in the config.",
+      );
+    case "StateError":
+      return lines(
+        `State registry error: ${error.reason}`,
+        "Next: check the state database file (default ~/.local/share/odoo-agentic-dev/state.db,",
+        "overridable via ODOO_AGENTIC_DEV_STATE_DB) and retry.",
+      );
+    case "PortConflictError":
+      return lines(
+        error.holder === null
+          ? `Port ${error.port} is already in use by another process.`
+          : `Port ${error.port} is already in use by the "${error.holder}" stack.`,
+        "Next: set ODOO_HTTP_PORT to a free port, or run `odoo-agentic-dev prune` to",
+        "clean up environments you no longer need.",
       );
   }
 };
