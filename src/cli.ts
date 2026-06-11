@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { Console, Effect, Layer } from "effect";
-import { Command } from "effect/unstable/cli";
+import { CliError, Command } from "effect/unstable/cli";
 import { NodeRuntime, NodeServices } from "@effect/platform-node";
 import { infoCommand } from "./commands/info.js";
 import { setupCommand } from "./commands/setup.js";
@@ -45,7 +45,13 @@ const services = Layer.mergeAll(
 const program = Command.run(root, { version: "0.1.0" }).pipe(
   Effect.catch((error) =>
     Effect.gen(function* () {
-      yield* Console.error(isRuntimeError(error) ? renderError(error) : String(error));
+      // ShowHelp is the cli library's control-flow signal: by the time it
+      // reaches us the help text is already printed (bare invocation or
+      // unknown subcommand), so the error itself must not be rendered.
+      const helpRequested = CliError.isCliError(error) && error._tag === "ShowHelp";
+      if (!helpRequested) {
+        yield* Console.error(isRuntimeError(error) ? renderError(error) : String(error));
+      }
       yield* Effect.sync(() => {
         process.exitCode = 1;
       });
