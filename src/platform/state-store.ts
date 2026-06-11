@@ -1,7 +1,10 @@
 import { mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
-import { DatabaseSync } from "node:sqlite";
+// node:sqlite is imported lazily inside StateStoreLive: Node evaluates builtin
+// modules before any user module runs, so a static import would emit the
+// ExperimentalWarning before cli.ts can install its filter.
+import type { DatabaseSync } from "node:sqlite";
 import { Context, Effect, Layer } from "effect";
 import type { EnvironmentRow } from "../core/environment.js";
 import { StateError } from "../errors/errors.js";
@@ -106,10 +109,15 @@ export const StateStoreLive = Layer.effect(
         catch: (cause) => new StateError({ reason: `${label}: ${String(cause)}` }),
       });
 
-    const db = yield* attempt("opening state db", () => {
+    const sqlite = yield* Effect.tryPromise({
+      try: () => import("node:sqlite"),
+      catch: (cause) => new StateError({ reason: `loading node:sqlite: ${String(cause)}` }),
+    });
+
+    const db: DatabaseSync = yield* attempt("opening state db", () => {
       const path = resolveStateDbPath();
       mkdirSync(dirname(path), { recursive: true });
-      const handle = new DatabaseSync(path);
+      const handle = new sqlite.DatabaseSync(path);
       handle.exec("PRAGMA journal_mode=WAL;");
       handle.exec(SCHEMA_SQL);
       return handle;

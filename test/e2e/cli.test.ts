@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -44,6 +44,19 @@ export default {
   it("info is deterministic", () => {
     const a = run(["info", "--json"], { ODOO_WORKTREE_NAME: "feature/demo" });
     expect(run(["info", "--json"], { ODOO_WORKTREE_NAME: "feature/demo" })).toBe(a);
+  });
+
+  it("never leaks the sqlite ExperimentalWarning (builtins evaluate before user modules)", () => {
+    // `list --all-projects` builds StateStoreLive (loads node:sqlite) and
+    // degrades gracefully without docker, so it runs anywhere
+    const result = spawnSync("node", [CLI, "list", "--all-projects"], {
+      cwd: dir,
+      encoding: "utf8",
+      env: { ...process.env, ODOO_AGENTIC_DEV_STATE_DB: join(dir, "e2e-state.db") },
+    });
+    expect(result.status).toBe(0);
+    expect(result.stderr).not.toContain("ExperimentalWarning");
+    expect(result.stdout).toContain("No environments recorded.");
   });
 
   it("bare invocation prints help without the ShowHelp noise line and exits nonzero", () => {
