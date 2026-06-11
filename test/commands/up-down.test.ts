@@ -1,3 +1,4 @@
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { buildUpPlan } from "../../src/commands/up.js";
 import { buildDownArgs, guardDown } from "../../src/commands/down.js";
@@ -33,7 +34,8 @@ describe("buildUpPlan", () => {
     expect(plan.companions).toHaveLength(1);
     const pwa = plan.companions[0]!;
     expect(pwa.name).toBe("pwa");
-    expect(pwa.cwd).toBe("/w/frontend");
+    // companion cwd is resolved against rootDir with platform path semantics
+    expect(pwa.cwd).toBe(resolve("/w", "frontend"));
     expect(pwa.env.PWA_PORT).toBe(String(onFeature.companionPorts.get("pwa")));
     expect(pwa.env.VITE_DB).toBe(onFeature.databaseName);
     expect(pwa.env.ODOO_DATABASE).toBe(onFeature.databaseName);

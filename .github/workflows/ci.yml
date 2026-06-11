@@ -2,6 +2,9 @@ name: ci
 on:
   push: { branches: [main] }
   pull_request:
+env:
+  # Node 24 becomes the forced default for actions on 2026-06-16; opt in early.
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 jobs:
   checks:
     strategy:

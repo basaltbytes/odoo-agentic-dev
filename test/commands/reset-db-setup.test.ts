@@ -1,3 +1,4 @@
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { guardReset, parseModulesFlag } from "../../src/commands/reset-db.js";
 import { buildSetupSteps } from "../../src/commands/setup.js";
@@ -46,7 +47,8 @@ describe("buildSetupSteps", () => {
       "reset-db",
     ]);
     const install = steps[1] as { kind: "install"; cwd: string };
-    expect(install.cwd).toBe("/w");
+    // install cwd is resolved against rootDir with platform path semantics
+    expect(install.cwd).toBe(resolve("/w", "."));
   });
 
   it("honors skip flags", () => {
