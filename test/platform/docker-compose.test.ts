@@ -12,7 +12,7 @@ import { makeRecordingRunner } from "../../src/testing/fake-adapters.js";
 import { buildWorktreeContext } from "../../src/core/worktree-context.js";
 import { normalizeConfig, validateConfigInput } from "../../src/config/schema.js";
 import { GENERATED_COMPOSE_RELATIVE_PATH } from "../../src/core/compose-model.js";
-import { DockerUnavailableError } from "../../src/errors/errors.js";
+import { ComposeCommandError, DockerUnavailableError } from "../../src/errors/errors.js";
 import type { ExecSpec, ExecResult } from "../../src/platform/command-runner.js";
 import { runSyncSuccess } from "../helpers.js";
 
@@ -142,6 +142,32 @@ describe("DockerComposeLive", () => {
     const logsDir = join(ref.projectDir, ".odoo-agentic-dev", "logs");
     expect(existsSync(logsDir)).toBe(true);
     expect(readdirSync(logsDir).length).toBeGreaterThan(0);
+  });
+
+  it("non-zero exit fails with the single-expanded argv (no doubled compose preamble)", async () => {
+    const { ctx, recipe, run } = makeEnv((spec) =>
+      spec.args.includes("down") ? { exitCode: 9, stdout: "", stderr: "kaboom" } : undefined,
+    );
+    const { error, ref } = await run(
+      Effect.gen(function* () {
+        const dc = yield* DockerCompose;
+        const ref = yield* dc.prepareComposeFile(recipe, ctx);
+        const error = yield* Effect.flip(dc.run(ref, ["down"]));
+        return { error, ref };
+      }),
+    );
+    expect(error).toBeInstanceOf(ComposeCommandError);
+    expect(error.exitCode).toBe(9);
+    expect(error.args).toEqual([
+      "compose",
+      "-p",
+      ctx.composeProjectName,
+      "-f",
+      ref.composeFile,
+      "--project-directory",
+      ref.projectDir,
+      "down",
+    ]);
   });
 
   it("waitForDb polls pg_isready until success", async () => {

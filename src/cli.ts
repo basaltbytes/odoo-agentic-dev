@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { Console, Effect, Layer } from "effect";
+import { Cause, Console, Effect, Layer } from "effect";
 import { CliError, Command } from "effect/unstable/cli";
 import { NodeRuntime, NodeServices } from "@effect/platform-node";
 import { infoCommand } from "./commands/info.js";
@@ -58,6 +58,19 @@ const program = Command.run(root, { version: "0.1.0" }).pipe(
     }),
   ),
   Effect.provide(services),
+  // Defects (Die causes, thrown TypeErrors, ...) are not on the typed channel
+  // above and runMain's reporting is disabled, so render them ourselves
+  // instead of exiting silently. Placed after Effect.provide so defects raised
+  // during layer construction are caught too.
+  Effect.catchDefect((defect) =>
+    Effect.gen(function* () {
+      yield* Console.error(
+        "Unexpected internal error — this is a bug in odoo-agentic-dev, please report it:",
+      );
+      yield* Console.error(Cause.pretty(Cause.die(defect)));
+      process.exitCode = 1;
+    }),
+  ),
 );
 
 NodeRuntime.runMain(program, { disableErrorReporting: true });

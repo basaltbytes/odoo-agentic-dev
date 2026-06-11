@@ -36,16 +36,11 @@ export interface DockerComposeApi {
     recipe: OdooAgenticDevConfig,
     ctx: WorktreeContext,
   ) => Effect.Effect<ComposeRef, ComposeCommandError>;
-  /** Captured run; fails ComposeCommandError on non-zero exit. */
+  /** Captured run (optionally fed stdin); fails ComposeCommandError on non-zero exit. */
   readonly run: (
     ref: ComposeRef,
     args: ReadonlyArray<string>,
-  ) => Effect.Effect<ExecResult, ComposeCommandError>;
-  /** Captured run with stdin; same failure semantics. */
-  readonly runWithStdin: (
-    ref: ComposeRef,
-    args: ReadonlyArray<string>,
-    stdin: string,
+    stdin?: string,
   ) => Effect.Effect<ExecResult, ComposeCommandError>;
   /** Streamed to our stdout; fails ComposeCommandError on non-zero exit. */
   readonly stream: (
@@ -79,12 +74,19 @@ export const DockerComposeLive = Layer.effect(
           stderrTail: cause.stderrTail ?? String(cause),
         });
 
-    const tryRun = (ref: ComposeRef, args: ReadonlyArray<string>, stdin?: string) => {
-      const argv = composeArgs(ref, args);
-      return runner
+    /**
+     * Single captured execution path: the caller hands over the fully expanded
+     * argv exactly once, and that same argv is shared by the runner spec and
+     * the error mapping (and, in `run`, by `failOnNonZero`). Never re-expand
+     * `composeArgs` for the same invocation.
+     */
+    const exec = (ref: ComposeRef, argv: ReadonlyArray<string>, stdin?: string) =>
+      runner
         .run({ command: "docker", args: argv, cwd: ref.projectDir, stdin })
         .pipe(Effect.mapError(toComposeError(argv)));
-    };
+
+    const tryRun = (ref: ComposeRef, args: ReadonlyArray<string>) =>
+      exec(ref, composeArgs(ref, args));
 
     /** Spec rule: never dump huge logs inline — full output goes to .odoo-agentic-dev/logs/, the error keeps a tail + the path. */
     const writeFailureLog = (
@@ -121,8 +123,10 @@ export const DockerComposeLive = Layer.effect(
         );
       };
 
-    const run = (ref: ComposeRef, args: ReadonlyArray<string>, stdin?: string) =>
-      tryRun(ref, args, stdin).pipe(Effect.flatMap(failOnNonZero(ref, composeArgs(ref, args))));
+    const run = (ref: ComposeRef, args: ReadonlyArray<string>, stdin?: string) => {
+      const argv = composeArgs(ref, args);
+      return exec(ref, argv, stdin).pipe(Effect.flatMap(failOnNonZero(ref, argv)));
+    };
 
     return {
       ensureAvailable: () =>
@@ -173,8 +177,7 @@ export const DockerComposeLive = Layer.effect(
           };
         }),
 
-      run: (ref, args) => run(ref, args),
-      runWithStdin: (ref, args, stdin) => run(ref, args, stdin),
+      run,
       tryRun,
 
       stream: (ref, args) => {
@@ -195,15 +198,16 @@ export const DockerComposeLive = Layer.effect(
         const interval = options?.intervalMillis ?? 1000;
         const maxAttempts = options?.maxAttempts ?? 60;
         const args = ["exec", "-T", dbService, "pg_isready", "-U", "odoo", "-d", "postgres"];
+        const argv = composeArgs(ref, args);
         const attempt = (n: number): Effect.Effect<void, ComposeCommandError> =>
-          tryRun(ref, args).pipe(
+          exec(ref, argv).pipe(
             Effect.flatMap((result) =>
               result.exitCode === 0
                 ? Effect.void
                 : n >= maxAttempts
                   ? Effect.fail(
                       new ComposeCommandError({
-                        args: composeArgs(ref, args),
+                        args: argv,
                         exitCode: result.exitCode,
                         stderrTail: `database not ready after ${maxAttempts} attempts`,
                       }),

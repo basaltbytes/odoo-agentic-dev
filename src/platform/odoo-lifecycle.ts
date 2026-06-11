@@ -66,7 +66,7 @@ export const OdooLifecycleLive = Layer.effect(
       ctx: WorktreeContext,
       ref: ComposeRef,
       code: string,
-    ) => compose.runWithStdin(ref, odooShellArgs(recipe.odoo.serviceName, ctx.databaseName), code);
+    ) => compose.run(ref, odooShellArgs(recipe.odoo.serviceName, ctx.databaseName), code);
 
     return {
       resetDatabase: (recipe, ctx, options) =>
