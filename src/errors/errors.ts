@@ -7,7 +7,13 @@ export class ConfigLoadError extends Data.TaggedError("ConfigLoadError")<{
 
 export class ConfigValidationError extends Data.TaggedError("ConfigValidationError")<{
   readonly issues: ReadonlyArray<string>
-}> {}
+}> {
+  // v4 beta TaggedError leaves Error#message empty; expose the issues there so
+  // standard tooling (and assertions on the thrown message) see the details.
+  override get message(): string {
+    return this.issues.join("; ")
+  }
+}
 
 export class GitError extends Data.TaggedError("GitError")<{
   readonly reason: string
