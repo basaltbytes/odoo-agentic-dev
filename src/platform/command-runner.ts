@@ -24,6 +24,8 @@ export interface CommandRunnerApi {
   readonly run: (spec: ExecSpec) => Effect.Effect<ExecResult, CommandFailedError>;
   /** Run streaming output lines to this process's stdout (with optional prefix). Resolves with exit code. */
   readonly runInherited: (spec: ExecSpec) => Effect.Effect<number, CommandFailedError>;
+  /** Full stdio inheritance (TTY passthrough) for interactive children. Resolves with exit code. */
+  readonly runInteractive: (spec: ExecSpec) => Effect.Effect<number, CommandFailedError>;
 }
 
 export const CommandRunner = Context.Service<CommandRunnerApi>("odoo-agentic-dev/CommandRunner");
@@ -117,6 +119,26 @@ export const CommandRunnerLive = Layer.effect(
         Effect.catch((cause) => Effect.fail(toFailure(spec)(cause))),
       );
 
-    return { run, runInherited };
+    // verified v4 beta fact: ChildProcess CommandOptions accept "inherit" for
+    // stdin/stdout/stderr, so interactive passthrough needs no spawn fallback
+    const runInteractive = (spec: ExecSpec) =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const handle = yield* ChildProcess.make(spec.command, [...spec.args], {
+            cwd: spec.cwd,
+            env: spec.env,
+            extendEnv: true,
+            stdin: "inherit",
+            stdout: "inherit",
+            stderr: "inherit",
+          });
+          return Number(yield* handle.exitCode);
+        }),
+      ).pipe(
+        Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+        Effect.catch((cause) => Effect.fail(toFailure(spec)(cause))),
+      );
+
+    return { run, runInherited, runInteractive };
   }),
 );

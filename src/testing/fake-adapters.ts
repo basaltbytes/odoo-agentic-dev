@@ -27,6 +27,7 @@ export const makeRecordingRunner = (
     layer: Layer.succeed(CommandRunner, {
       run: (spec) => Effect.sync(() => respond(spec)),
       runInherited: (spec) => Effect.sync(() => respond(spec).exitCode),
+      runInteractive: (spec) => Effect.sync(() => respond(spec).exitCode),
     }),
   };
 };

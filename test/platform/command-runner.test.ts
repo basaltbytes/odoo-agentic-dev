@@ -54,6 +54,31 @@ describe("CommandRunnerLive", () => {
     );
     expect(result.stdout).toContain("fed-via-stdin");
   });
+
+  it("runInteractive inherits stdio and resolves with the child's exit code", async () => {
+    // full stdio inheritance must work headless (vitest pipes, no TTY)
+    const exitCode = await runLive(
+      Effect.gen(function* () {
+        const runner = yield* CommandRunner;
+        return yield* runner.runInteractive({ command: "node", args: ["-e", "process.exit(7)"] });
+      }),
+    );
+    expect(exitCode).toBe(7);
+  });
+
+  it("runInteractive fails typed when the binary cannot be spawned", async () => {
+    await expect(
+      runLive(
+        Effect.gen(function* () {
+          const runner = yield* CommandRunner;
+          return yield* runner.runInteractive({
+            command: "definitely-not-a-real-binary-oad",
+            args: [],
+          });
+        }),
+      ),
+    ).rejects.toThrow(/definitely-not-a-real-binary-oad/);
+  });
 });
 
 describe("makeRecordingRunner", () => {
