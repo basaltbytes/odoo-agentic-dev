@@ -1,6 +1,9 @@
 import { Effect, Layer } from "effect"
 import { CommandRunner } from "../platform/command-runner.js"
 import type { CommandRunnerApi, ExecResult, ExecSpec } from "../platform/command-runner.js"
+import { Git } from "../platform/git.js"
+import type { GitApi } from "../platform/git.js"
+import type { GitState } from "../core/worktree-context.js"
 
 /**
  * CommandRunner fake: records every call; `script` may return a result per
@@ -23,4 +26,5 @@ export const makeRecordingRunner = (
   }
 }
 
-// makeFakeGit is added in Task 10 alongside the Git service it fakes.
+export const makeFakeGit = (state: GitState): Layer.Layer<GitApi> =>
+  Layer.succeed(Git, { state: () => Effect.succeed(state) })

@@ -17,7 +17,11 @@ export class ConfigValidationError extends Data.TaggedError("ConfigValidationErr
 
 export class GitError extends Data.TaggedError("GitError")<{
   readonly reason: string
-}> {}
+}> {
+  override get message(): string {
+    return this.reason
+  }
+}
 
 export class UnsafeDatabaseNameError extends Data.TaggedError("UnsafeDatabaseNameError")<{
   readonly name: string
