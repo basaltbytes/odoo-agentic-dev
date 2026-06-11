@@ -3,17 +3,20 @@ import { Console, Effect, Layer } from "effect"
 import { Command } from "effect/unstable/cli"
 import { NodeRuntime, NodeServices } from "@effect/platform-node"
 import { infoCommand } from "./commands/info.js"
+import { downCommand } from "./commands/down.js"
 import { CommandRunnerLive } from "./platform/command-runner.js"
 import { GitLive } from "./platform/git.js"
+import { DockerComposeLive } from "./platform/docker-compose.js"
 import { isRuntimeError, renderError } from "./errors/errors.js"
 
 const root = Command.make("odoo-agentic-dev").pipe(
   Command.withDescription("Agent-friendly local Odoo development runtime"),
-  Command.withSubcommands([infoCommand])
+  Command.withSubcommands([infoCommand, downCommand])
 )
 
 const services = Layer.mergeAll(
   GitLive.pipe(Layer.provide(CommandRunnerLive)),
+  DockerComposeLive.pipe(Layer.provide(CommandRunnerLive)),
   CommandRunnerLive
 ).pipe(Layer.provideMerge(NodeServices.layer))
 
