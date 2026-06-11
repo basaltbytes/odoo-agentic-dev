@@ -138,6 +138,5 @@ export type OdooAgenticDevConfig = {
  * Identity helper preserving literal types. Runtime validation happens when the
  * CLI loads the file (config/schema.ts), so plain JS configs are covered too.
  */
-export const defineOdooAgenticDevConfig = (
-  config: OdooAgenticDevConfigInput,
-): OdooAgenticDevConfigInput => config;
+export const defineConfig = (config: OdooAgenticDevConfigInput): OdooAgenticDevConfigInput =>
+  config;

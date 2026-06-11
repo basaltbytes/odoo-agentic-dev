@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { defineOdooAgenticDevConfig } from "../../src/index.js";
+import { defineConfig } from "../../src/index.js";
 import type { OdooAgenticDevConfigInput, PostInitHook } from "../../src/index.js";
 
-describe("defineOdooAgenticDevConfig", () => {
+describe("defineConfig", () => {
   it("returns its input unchanged (identity, validation happens in the loader)", () => {
     const input: OdooAgenticDevConfigInput = {
       project: { id: "billing-odoo", dbPrefix: "billing" },
@@ -11,7 +11,7 @@ describe("defineOdooAgenticDevConfig", () => {
         addons: [{ host: "addons", container: "/mnt/extra-addons/custom" }],
       },
     };
-    expect(defineOdooAgenticDevConfig(input)).toBe(input);
+    expect(defineConfig(input)).toBe(input);
   });
 
   it("hook union accepts all four v1 hook types", () => {

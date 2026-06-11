@@ -27,9 +27,9 @@ pnpm add -D @basaltbytes/odoo-agentic-dev
 Create `odoo-agentic-dev.config.ts` at the project root (also accepted: `.mts`, `.js`, `.mjs` — `.ts` configs load directly, no precompilation needed). For an Odoo-only project:
 
 ```ts
-import { defineOdooAgenticDevConfig } from "@basaltbytes/odoo-agentic-dev";
+import { defineConfig } from "@basaltbytes/odoo-agentic-dev";
 
-export default defineOdooAgenticDevConfig({
+export default defineConfig({
   project: {
     id: "billing-odoo",
     dbPrefix: "billing",
@@ -55,9 +55,9 @@ export default defineOdooAgenticDevConfig({
 For a KRISS LAURE-like monorepo with a frontend companion app:
 
 ```ts
-import { defineOdooAgenticDevConfig } from "@basaltbytes/odoo-agentic-dev";
+import { defineConfig } from "@basaltbytes/odoo-agentic-dev";
 
-export default defineOdooAgenticDevConfig({
+export default defineConfig({
   project: {
     id: "kriss-laure",
     dbPrefix: "kl",

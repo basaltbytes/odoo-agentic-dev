@@ -145,7 +145,7 @@ export const renderError = (error: RuntimeError): string => {
       return lines(
         `Could not load config: ${error.path}`,
         `Reason: ${error.reason}`,
-        `Next: check the file exists and its default export is defineOdooAgenticDevConfig({...}).`,
+        `Next: check the file exists and its default export is defineConfig({...}).`,
       );
     case "ConfigValidationError":
       return lines(

@@ -19,8 +19,8 @@ afterAll(() => {
 });
 
 const VALID = `
-import { defineOdooAgenticDevConfig } from ${JSON.stringify(SRC_INDEX)}
-export default defineOdooAgenticDevConfig({
+import { defineConfig } from ${JSON.stringify(SRC_INDEX)}
+export default defineConfig({
   project: { id: "billing-odoo", dbPrefix: "billing" },
   odoo: { version: "18.0", addons: [{ host: "addons", container: "/mnt/extra-addons/custom" }] }
 })
