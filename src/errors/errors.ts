@@ -3,7 +3,11 @@ import { Data } from "effect"
 export class ConfigLoadError extends Data.TaggedError("ConfigLoadError")<{
   readonly path: string
   readonly reason: string
-}> {}
+}> {
+  override get message(): string {
+    return this.reason
+  }
+}
 
 export class ConfigValidationError extends Data.TaggedError("ConfigValidationError")<{
   readonly issues: ReadonlyArray<string>
