@@ -1,20 +1,44 @@
 {
   "name": "@basaltbytes/odoo-agentic-dev",
-  "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "version": "0.1.0",
+  "description": "Agent-friendly local Odoo development runtime: worktree-isolated databases, ports, and Docker Compose stacks",
+  "type": "module",
+  "license": "MIT",
+  "engines": { "node": ">=20" },
+  "bin": {
+    "odoo-agentic-dev": "./dist/cli.js",
+    "oad": "./dist/cli.js"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },
+    "./package.json": "./package.json"
+  },
+  "files": ["dist"],
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "build": "tsc -p tsconfig.json",
+    "lint": "oxlint .",
+    "format": "oxfmt --write .",
+    "format:check": "oxfmt --check .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
   "devEngines": {
-    "packageManager": {
-      "name": "pnpm",
-      "version": "11.0.8",
-      "onFail": "download"
-    }
+    "packageManager": { "name": "pnpm", "version": "11.0.8", "onFail": "download" }
   },
-  "type": "module"
+  "dependencies": {
+    "@effect/platform-node": "4.0.0-beta.78",
+    "effect": "4.0.0-beta.78",
+    "jiti": "^2.7.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.2",
+    "oxfmt": "^0.54.0",
+    "oxlint": "^1.69.0",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.8",
+    "yaml": "^2.9.0"
+  }
 }
