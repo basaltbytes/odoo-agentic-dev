@@ -85,13 +85,13 @@ Expected: lockfile created, `node_modules` populated. (npm refuses this repo bec
   },
   "files": ["dist"],
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.build.json",
     "lint": "oxlint .",
     "format": "oxfmt --write .",
     "format:check": "oxfmt --check .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json"
   },
   "devEngines": {
     "packageManager": { "name": "pnpm", "version": "11.0.8", "onFail": "download" }
@@ -99,7 +99,7 @@ Expected: lockfile created, `node_modules` populated. (npm refuses this repo bec
 }
 ```
 
-- [ ] **Step 3: Create `tsconfig.json`**
+- [ ] **Step 3: Create `tsconfig.json` (checking: src + test) and `tsconfig.build.json` (emit: src only)**
 
 ```json
 {
@@ -111,18 +111,29 @@ Expected: lockfile created, `node_modules` populated. (npm refuses this repo bec
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "isolatedModules": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "noEmit": true
+  },
+  "include": ["src", "test", "vitest.config.ts"]
+}
+```
+
+```json
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
     "declaration": true,
     "sourceMap": true,
     "outDir": "dist",
-    "rootDir": "src",
-    "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true
+    "rootDir": "src"
   },
   "include": ["src"]
 }
 ```
 
-`skipLibCheck` is deliberate: beta `.d.ts` churn must not block our build.
+`skipLibCheck` is deliberate: beta `.d.ts` churn must not block our build. The split keeps tests typechecked (and the IDE happy) while `dist/` only ever contains `src/` output.
 
 - [ ] **Step 4: Create `vitest.config.ts`, `.gitignore`, `.oxlintrc.json`**
 
