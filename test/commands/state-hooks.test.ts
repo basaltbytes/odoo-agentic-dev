@@ -13,6 +13,7 @@ import { DockerComposeLive } from "../../src/platform/docker-compose.js";
 import { PortConflictError } from "../../src/errors/errors.js";
 import type { EnvironmentRow } from "../../src/core/environment.js";
 import {
+  makeFakeGit,
   makeFakePortProbe,
   makeFakeStateStore,
   makeRecordingRunner,
@@ -60,19 +61,28 @@ const makeEnv = (options: {
   readonly rows?: ReadonlyArray<EnvironmentRow>;
   readonly busy?: ReadonlySet<number>;
   readonly composeLs?: ReadonlyArray<{ Name: string; Status: string }>;
+  readonly branches?: ReadonlySet<string>;
 }) => {
-  const recording = makeRecordingRunner((spec) =>
-    spec.args.includes("ls")
-      ? { exitCode: 0, stdout: JSON.stringify(options.composeLs ?? []), stderr: "" }
-      : undefined,
-  );
+  const recording = makeRecordingRunner((spec) => {
+    if (spec.args[0] === "compose" && spec.args[1] === "ls") {
+      return { exitCode: 0, stdout: JSON.stringify(options.composeLs ?? []), stderr: "" };
+    }
+    if (spec.args[0] === "ps" || (spec.args[0] === "volume" && spec.args[1] === "ls")) {
+      return { exitCode: 0, stdout: "", stderr: "" };
+    }
+    return undefined;
+  });
   const store = makeFakeStateStore(options.rows ?? []);
   const layer = Layer.mergeAll(
     Layer.provide(DockerComposeLive, recording.layer),
     store.layer,
     makeFakePortProbe(options.busy ?? new Set()),
+    makeFakeGit(
+      { _tag: "Branch", branch: "feature/z" },
+      options.branches !== undefined ? { branches: options.branches } : undefined,
+    ),
   );
-  return { run: runWith(layer), store };
+  return { recording, run: runWith(layer), store };
 };
 
 describe("rowFromContext", () => {
@@ -184,6 +194,24 @@ describe("warnOrAutoClean", () => {
     expect(candidates.map((c) => c.reason)).toEqual(["stale"]);
   });
 
+  it("detects deleted branches through the git probe", async () => {
+    const { run } = makeEnv({
+      rows: [
+        makeRow({ composeProject: "kl_dead", rootDir: existingDir(), branch: "dead" }),
+        makeRow({ composeProject: "kl_alive", rootDir: existingDir(), branch: "alive" }),
+      ],
+      composeLs: [
+        { Name: "kl_dead", Status: "exited(2)" },
+        { Name: "kl_alive", Status: "running(2)" },
+      ],
+      branches: new Set(["alive"]),
+    });
+    const candidates = await run(warnOrAutoClean(recipe, onFeature));
+    expect(candidates.map((c) => [c.row.composeProject, c.reason])).toEqual([
+      ["kl_dead", "gone-branch"],
+    ]);
+  });
+
   it("skips shared rows and stays silent without candidates", async () => {
     const log = vi.spyOn(console, "log").mockImplementation(() => {});
     const { run } = makeEnv({
@@ -192,5 +220,58 @@ describe("warnOrAutoClean", () => {
     });
     await expect(run(warnOrAutoClean(recipe, onFeature))).resolves.toEqual([]);
     expect(log).not.toHaveBeenCalled();
+  });
+});
+
+describe("warnOrAutoClean with cleanup.auto", () => {
+  const autoRecipe = makeRecipe({
+    project: { id: "kl", dbPrefix: "kl", sharedDatabase: "kl_e2e_demo", sharedBranches: ["main"] },
+    odoo: { version: "18.0", addons: [{ host: "addons", container: "/mnt/c" }] },
+    cleanup: { auto: true },
+  });
+
+  it("prunes candidates (vanished and stale) and reports each removal", async () => {
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    const { run, store } = makeEnv({
+      rows: [
+        makeRow({ composeProject: "kl_vanished" }),
+        makeRow({
+          composeProject: "kl_stale",
+          rootDir: existingDir(),
+          branch: "alive",
+          lastUsedAt: "2020-01-01T00:00:00.000Z",
+        }),
+        makeRow({ composeProject: "kl_keep", rootDir: existingDir(), branch: "alive" }),
+      ],
+      composeLs: [
+        { Name: "kl_stale", Status: "exited(2)" },
+        { Name: "kl_keep", Status: "running(2)" },
+      ],
+      branches: new Set(["alive"]),
+    });
+    const candidates = await run(warnOrAutoClean(autoRecipe, onFeature));
+    expect(candidates.map((c) => c.row.composeProject).sort()).toEqual(["kl_stale", "kl_vanished"]);
+    expect(store.rows.has("kl_vanished")).toBe(false);
+    expect(store.rows.has("kl_stale")).toBe(false);
+    expect(store.rows.has("kl_keep")).toBe(true);
+    const output = log.mock.calls.map((call) => String(call[0])).join("\n");
+    expect(output).toMatch(/auto-clean: removed kl_vanished \(vanished\)/);
+    expect(output).toMatch(/auto-clean: removed kl_stale \(stale\)/);
+  });
+
+  it("never touches shared rows or the current environment", async () => {
+    const { run, store } = makeEnv({
+      rows: [
+        makeRow({ composeProject: "kl_shared", shared: true }),
+        makeRow({
+          composeProject: onFeature.composeProjectName,
+          databaseName: onFeature.databaseName,
+        }),
+      ],
+      composeLs: [],
+    });
+    await expect(run(warnOrAutoClean(autoRecipe, onFeature))).resolves.toEqual([]);
+    expect(store.rows.has("kl_shared")).toBe(true);
+    expect(store.rows.has(onFeature.composeProjectName)).toBe(true);
   });
 });

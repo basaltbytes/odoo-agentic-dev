@@ -13,6 +13,9 @@ import { resetDbCommand } from "./commands/reset-db.js";
 import { updateCommand } from "./commands/update.js";
 import { testCommand } from "./commands/test.js";
 import { linkSourceCommand } from "./commands/link-source.js";
+import { listCommand } from "./commands/list.js";
+import { pruneCommand } from "./commands/prune.js";
+import { doctorCommand } from "./commands/doctor.js";
 import { CommandRunnerLive } from "./platform/command-runner.js";
 import { GitLive } from "./platform/git.js";
 import { DockerComposeLive } from "./platform/docker-compose.js";
@@ -33,6 +36,9 @@ const root = Command.make("odoo-agentic-dev").pipe(
     updateCommand,
     testCommand,
     linkSourceCommand,
+    listCommand,
+    pruneCommand,
+    doctorCommand,
   ]),
 );
 

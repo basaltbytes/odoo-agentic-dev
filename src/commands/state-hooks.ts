@@ -1,4 +1,3 @@
-import { existsSync } from "node:fs";
 import { Console, Effect } from "effect";
 import { PortConflictError } from "../errors/errors.js";
 import type { ComposeCommandError, StateError } from "../errors/errors.js";
@@ -6,13 +5,15 @@ import type { OdooAgenticDevConfig } from "../core/project-recipe.js";
 import type { WorktreeContext } from "../core/worktree-context.js";
 import { isSharedDatabase } from "../core/safety.js";
 import { classifyEnvironments } from "../core/environment.js";
-import type { ClassifiedEnvironment, EnvironmentProbe } from "../core/environment.js";
+import type { ClassifiedEnvironment } from "../core/environment.js";
 import { StateStore } from "../platform/state-store.js";
 import type { EnvironmentUpsert, StateStoreApi } from "../platform/state-store.js";
 import { PortProbe } from "../platform/port-probe.js";
 import type { PortProbeApi } from "../platform/port-probe.js";
 import { DockerCompose } from "../platform/docker-compose.js";
 import type { DockerComposeApi } from "../platform/docker-compose.js";
+import type { GitApi } from "../platform/git.js";
+import { buildProbes, runPrune } from "./prune.js";
 
 /** The live identity of this command's environment, ready for StateStore.upsert. */
 export const rowFromContext = (
@@ -71,11 +72,10 @@ export const ensurePortAvailable = (
 
 /**
  * End-of-command cleanup hook for `up`/`setup`. Classifies this project's
- * registry rows against docker reality and either warns (default) or — once
- * Task 7 lands the prune routine — removes them when `cleanup.auto` is set.
- * The environment the command is running in is never a candidate. Until
- * `Git.branchExists` exists (Task 7) probes carry root-dir existence only, so
- * the rule set is reduced to vanished/gone-rootdir/stale.
+ * registry rows against docker reality and either warns (default) or removes
+ * them via the prune routine when `cleanup.auto` is set. Shared rows are
+ * never auto-cleaned, and the environment the command is running in is never
+ * a candidate on either path.
  */
 export const warnOrAutoClean = (
   recipe: OdooAgenticDevConfig,
@@ -83,19 +83,28 @@ export const warnOrAutoClean = (
 ): Effect.Effect<
   ReadonlyArray<ClassifiedEnvironment>,
   StateError | ComposeCommandError,
-  StateStoreApi | DockerComposeApi
+  StateStoreApi | DockerComposeApi | GitApi
 > =>
   Effect.gen(function* () {
+    if (recipe.cleanup.auto) {
+      const report = yield* runPrune({
+        olderThanDays: recipe.cleanup.maxAgeDays,
+        yes: true,
+        allowShared: false,
+        projectId: recipe.project.id,
+        excludeComposeProject: ctx.composeProjectName,
+      });
+      for (const removal of report.removed) {
+        yield* Console.log(`auto-clean: removed ${removal.composeProject} (${removal.reason})`);
+      }
+      return report.candidates;
+    }
+
     const store = yield* StateStore;
     const compose = yield* DockerCompose;
     const rows = yield* store.list({ projectId: recipe.project.id });
     const dockerProjects = yield* compose.listProjects();
-    const probes = new Map<string, EnvironmentProbe>(
-      rows.map((row) => [
-        row.composeProject,
-        { rootDirExists: existsSync(row.rootDir), branchExists: null },
-      ]),
-    );
+    const probes = yield* buildProbes(rows);
     const classified = classifyEnvironments({
       rows,
       dockerProjects,
@@ -111,8 +120,6 @@ export const warnOrAutoClean = (
         c.row.composeProject !== ctx.composeProjectName,
     );
     if (candidates.length === 0) return candidates;
-    // recipe.cleanup.auto: Task 7 plugs the prune routine in here; until then
-    // the auto branch degrades to the same warning as the default path.
     yield* Console.log(
       `${candidates.length} stale environment(s) — run \`odoo-agentic-dev prune\``,
     );

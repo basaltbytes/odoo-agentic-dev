@@ -31,8 +31,20 @@ export const makeRecordingRunner = (
   };
 };
 
-export const makeFakeGit = (state: GitState): Layer.Layer<GitApi> =>
-  Layer.succeed(Git, { state: () => Effect.succeed(state) });
+/**
+ * Git fake. `branchExists` consults `options.branches` when provided;
+ * without it every branch is reported as existing (the conservative default —
+ * nothing gets classified `gone-branch` by accident).
+ */
+export const makeFakeGit = (
+  state: GitState,
+  options?: { readonly branches?: ReadonlySet<string> | undefined },
+): Layer.Layer<GitApi> =>
+  Layer.succeed(Git, {
+    state: () => Effect.succeed(state),
+    branchExists: (_rootDir, branch) =>
+      Effect.succeed(options?.branches === undefined ? true : options.branches.has(branch)),
+  });
 
 /** PortProbe fake: ports in `busyPorts` are reported busy, everything else free. */
 export const makeFakePortProbe = (busyPorts: ReadonlySet<number>): Layer.Layer<PortProbeApi> =>

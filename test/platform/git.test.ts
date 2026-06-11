@@ -18,6 +18,48 @@ const state = (script: Parameters<typeof makeRecordingRunner>[0]) => {
   };
 };
 
+const branchExists = (script: Parameters<typeof makeRecordingRunner>[0]) => {
+  const recording = makeRecordingRunner(script);
+  return {
+    recording,
+    run: runWith(Layer.provide(GitLive, recording.layer))(
+      Effect.gen(function* () {
+        const git = yield* Git;
+        return yield* git.branchExists("/work/repo", "feature/x");
+      }),
+    ),
+  };
+};
+
+describe("GitLive.branchExists", () => {
+  it("returns true on exit 0 with the exact verify argv", async () => {
+    const { recording, run } = branchExists(() => ({
+      exitCode: 0,
+      stdout: "abc123\n",
+      stderr: "",
+    }));
+    expect(await run).toBe(true);
+    expect(recording.calls[0]).toMatchObject({
+      command: "git",
+      args: ["-C", "/work/repo", "rev-parse", "--verify", "--quiet", "refs/heads/feature/x"],
+    });
+  });
+
+  it("returns false on exit 1 (ref does not exist)", async () => {
+    const { run } = branchExists(() => ({ exitCode: 1, stdout: "", stderr: "" }));
+    expect(await run).toBe(false);
+  });
+
+  it("fails with GitError on any other exit code", async () => {
+    const { run } = branchExists(() => ({
+      exitCode: 128,
+      stdout: "",
+      stderr: "fatal: not a git repository",
+    }));
+    await expect(run).rejects.toThrow(/not a git repository/);
+  });
+});
+
 describe("GitLive.state", () => {
   it("returns Branch for a normal checkout", async () => {
     const { recording, run } = state(() => ({

@@ -5,7 +5,7 @@ import type { WorktreeContext } from "../core/worktree-context.js";
 import type { OdooAgenticDevConfig } from "../core/project-recipe.js";
 import { Git } from "../platform/git.js";
 import type { GitApi } from "../platform/git.js";
-import type { RuntimeError } from "../errors/errors.js";
+import type { ConfigLoadError, ConfigValidationError, RuntimeError } from "../errors/errors.js";
 
 export type ResolvedContext = {
   readonly recipe: OdooAgenticDevConfig;
@@ -28,3 +28,20 @@ export const resolveContext = (
     const ctx = yield* buildWorktreeContext({ rootDir, recipe, env, git: gitState });
     return { recipe, ctx };
   });
+
+/**
+ * Project scope for `list`/`prune`: `--all-projects` means "no filter" and
+ * deliberately skips config discovery entirely, so these commands work from
+ * any directory; otherwise the discovered recipe's project id is the scope.
+ */
+export const resolveProjectId = (
+  configFlag: Option.Option<string>,
+  allProjects: boolean,
+): Effect.Effect<string | undefined, ConfigLoadError | ConfigValidationError> =>
+  allProjects
+    ? Effect.succeed(undefined)
+    : loadRecipe({
+        cwd: process.cwd(),
+        explicitPath: Option.getOrUndefined(configFlag),
+        env: process.env,
+      }).pipe(Effect.map(({ recipe }) => recipe.project.id));

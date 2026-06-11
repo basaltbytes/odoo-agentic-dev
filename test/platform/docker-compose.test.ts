@@ -7,6 +7,7 @@ import {
   composeArgs,
   DockerCompose,
   DockerComposeLive,
+  parseLabeledPs,
 } from "../../src/platform/docker-compose.js";
 import { makeRecordingRunner } from "../../src/testing/fake-adapters.js";
 import { GENERATED_COMPOSE_RELATIVE_PATH } from "../../src/core/compose-model.js";
@@ -31,6 +32,30 @@ const makeEnv = (script?: (spec: ExecSpec) => ExecResult | undefined) => {
   const run = runWith(Layer.provide(DockerComposeLive, recording.layer));
   return { ctx, recipe, recording, rootDir, run };
 };
+
+describe("parseLabeledPs", () => {
+  it("parses NDJSON lines, keeps the empty branch label verbatim, skips garbage", () => {
+    const line = JSON.stringify({
+      Labels:
+        "com.docker.compose.project=fixture_fx_a,dev.basaltbytes.oad=1,dev.basaltbytes.oad.project-id=fixture,dev.basaltbytes.oad.database=fx_a,dev.basaltbytes.oad.root-dir=/w,dev.basaltbytes.oad.branch=",
+    });
+    const parsed = parseLabeledPs(`${line}\nnot json\n${JSON.stringify({ Labels: 42 })}\n`);
+    expect(parsed).toEqual([
+      {
+        composeProject: "fixture_fx_a",
+        projectId: "fixture",
+        database: "fx_a",
+        rootDir: "/w",
+        branch: "",
+      },
+    ]);
+  });
+
+  it("skips containers without a compose project label and tolerates empty output", () => {
+    expect(parseLabeledPs("")).toEqual([]);
+    expect(parseLabeledPs(`${JSON.stringify({ Labels: "dev.basaltbytes.oad=1" })}\n`)).toEqual([]);
+  });
+});
 
 describe("composeArgs", () => {
   it("builds the canonical docker compose argv", () => {
@@ -205,6 +230,78 @@ describe("DockerComposeLive", () => {
       }),
     );
     expect(error).toBeInstanceOf(ComposeCommandError);
+  });
+
+  it("removeByLabel removes containers then volumes by compose-project label", async () => {
+    const { recording, run } = makeEnv((spec) => {
+      if (spec.args[0] === "ps") return { exitCode: 0, stdout: "c1\nc2\n", stderr: "" };
+      if (spec.args[0] === "volume" && spec.args[1] === "ls") {
+        return { exitCode: 0, stdout: "v1\n", stderr: "" };
+      }
+      return undefined;
+    });
+    await run(
+      Effect.gen(function* () {
+        const dc = yield* DockerCompose;
+        yield* dc.removeByLabel("kl_gone");
+      }),
+    );
+    expect(recording.calls.map((c) => c.args)).toEqual([
+      ["ps", "-aq", "--filter", "label=com.docker.compose.project=kl_gone"],
+      ["rm", "-f", "c1", "c2"],
+      ["volume", "ls", "-q", "--filter", "label=com.docker.compose.project=kl_gone"],
+      ["volume", "rm", "v1"],
+    ]);
+  });
+
+  it("removeByLabel skips rm calls when nothing matches", async () => {
+    const { recording, run } = makeEnv(() => ({ exitCode: 0, stdout: "\n", stderr: "" }));
+    await run(
+      Effect.gen(function* () {
+        const dc = yield* DockerCompose;
+        yield* dc.removeByLabel("kl_gone");
+      }),
+    );
+    expect(recording.calls.map((c) => c.args[0])).toEqual(["ps", "volume"]);
+  });
+
+  it("listLabeledContainers queries oad-labeled containers and dedupes per project", async () => {
+    const labels = [
+      "com.docker.compose.project=kl_x",
+      "dev.basaltbytes.oad=1",
+      "dev.basaltbytes.oad.project-id=kl",
+      "dev.basaltbytes.oad.database=kl_x",
+      "dev.basaltbytes.oad.root-dir=/work/x",
+      "dev.basaltbytes.oad.branch=feature/x",
+    ].join(",");
+    const { recording, run } = makeEnv((spec) =>
+      spec.args[0] === "ps"
+        ? {
+            exitCode: 0,
+            stdout: `${JSON.stringify({ ID: "a", Labels: labels })}\n${JSON.stringify({ ID: "b", Labels: labels })}\n`,
+            stderr: "",
+          }
+        : undefined,
+    );
+    const containers = await run(
+      Effect.gen(function* () {
+        const dc = yield* DockerCompose;
+        return yield* dc.listLabeledContainers();
+      }),
+    );
+    expect(containers).toEqual([
+      {
+        composeProject: "kl_x",
+        projectId: "kl",
+        database: "kl_x",
+        rootDir: "/work/x",
+        branch: "feature/x",
+      },
+    ]);
+    expect(recording.calls.at(-1)).toMatchObject({
+      command: "docker",
+      args: ["ps", "-a", "--filter", "label=dev.basaltbytes.oad=1", "--format", "json"],
+    });
   });
 
   it("waitForDb polls pg_isready until success", async () => {

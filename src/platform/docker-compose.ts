@@ -34,10 +34,30 @@ export type ComposeProject = {
   readonly running: boolean;
 };
 
+/** Identity labels read back from a container the generated compose stamped. */
+export type LabeledContainer = {
+  readonly composeProject: string;
+  readonly projectId: string | null;
+  readonly database: string | null;
+  readonly rootDir: string | null;
+  /** raw label value: "" means "no branch" (callers map it back to null) */
+  readonly branch: string | null;
+};
+
 export interface DockerComposeApi {
   readonly ensureAvailable: () => Effect.Effect<void, DockerUnavailableError>;
   /** All compose projects on this docker host (`docker compose ls -a`). */
   readonly listProjects: () => Effect.Effect<ReadonlyArray<ComposeProject>, ComposeCommandError>;
+  /** All containers stamped with our oad labels, deduped per compose project. */
+  readonly listLabeledContainers: () => Effect.Effect<
+    ReadonlyArray<LabeledContainer>,
+    ComposeCommandError
+  >;
+  /**
+   * Label-based teardown that works without the original compose file:
+   * `docker rm -f` every container of the project, then remove its volumes.
+   */
+  readonly removeByLabel: (composeProject: string) => Effect.Effect<void, ComposeCommandError>;
   /** Write the generated compose file (or resolve the project-supplied one). */
   readonly prepareComposeFile: (
     recipe: OdooAgenticDevConfig,
@@ -90,6 +110,52 @@ export const parseComposeLs = (stdout: string): Array<ComposeProject> => {
   }
   return projects;
 };
+
+/**
+ * Lenient parse of `docker ps --format json` output (NDJSON, one container per
+ * line; a top-level array is tolerated). `Labels` is a comma-joined `k=v`
+ * string, so label values containing commas are truncated — acceptable for the
+ * best-effort adoption this feeds. Unparseable lines are skipped.
+ */
+export const parseLabeledPs = (stdout: string): Array<LabeledContainer> => {
+  const containers = new Map<string, LabeledContainer>();
+  for (const line of stdout.split(/\r?\n/)) {
+    const text = line.trim();
+    if (text.length === 0) continue;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      continue;
+    }
+    for (const item of Array.isArray(parsed) ? parsed : [parsed]) {
+      if (typeof item !== "object" || item === null) continue;
+      const labelsRaw = (item as Record<string, unknown>)["Labels"];
+      if (typeof labelsRaw !== "string") continue;
+      const labels = new Map<string, string>();
+      for (const part of labelsRaw.split(",")) {
+        const eq = part.indexOf("=");
+        if (eq > 0) labels.set(part.slice(0, eq), part.slice(eq + 1));
+      }
+      const composeProject = labels.get("com.docker.compose.project");
+      if (composeProject === undefined || containers.has(composeProject)) continue;
+      containers.set(composeProject, {
+        composeProject,
+        projectId: labels.get("dev.basaltbytes.oad.project-id") ?? null,
+        database: labels.get("dev.basaltbytes.oad.database") ?? null,
+        rootDir: labels.get("dev.basaltbytes.oad.root-dir") ?? null,
+        branch: labels.get("dev.basaltbytes.oad.branch") ?? null,
+      });
+    }
+  }
+  return [...containers.values()];
+};
+
+const splitLines = (stdout: string): Array<string> =>
+  stdout
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
 
 export const DockerComposeLive = Layer.effect(
   DockerCompose,
@@ -158,31 +224,64 @@ export const DockerComposeLive = Layer.effect(
       return exec(ref, argv, stdin).pipe(Effect.flatMap(failOnNonZero(ref, argv)));
     };
 
-    const listProjects = (): Effect.Effect<ReadonlyArray<ComposeProject>, ComposeCommandError> => {
-      const argv = ["compose", "ls", "-a", "--format", "json"];
-      return runner.run({ command: "docker", args: argv }).pipe(
+    /** Top-level `docker <argv>` (no compose ref): captured, fails typed on non-zero. */
+    const dockerRun = (
+      argv: ReadonlyArray<string>,
+    ): Effect.Effect<ExecResult, ComposeCommandError> =>
+      runner.run({ command: "docker", args: argv }).pipe(
         Effect.mapError(toComposeError(argv)),
         Effect.flatMap((result) =>
-          result.exitCode !== 0
-            ? Effect.fail(
+          result.exitCode === 0
+            ? Effect.succeed(result)
+            : Effect.fail(
                 new ComposeCommandError({
                   args: argv,
                   exitCode: result.exitCode,
                   stderrTail: tail(result.stderr || result.stdout),
                 }),
-              )
-            : Effect.try({
-                try: () => parseComposeLs(result.stdout),
-                catch: (cause) =>
-                  new ComposeCommandError({
-                    args: argv,
-                    exitCode: 0,
-                    stderrTail: `unparseable compose ls output: ${String(cause)}`,
-                  }),
-              }),
+              ),
         ),
       );
+
+    const parseWith =
+      <A>(
+        argv: ReadonlyArray<string>,
+        parse: (stdout: string) => A,
+      ): ((result: ExecResult) => Effect.Effect<A, ComposeCommandError>) =>
+      (result) =>
+        Effect.try({
+          try: () => parse(result.stdout),
+          catch: (cause) =>
+            new ComposeCommandError({
+              args: argv,
+              exitCode: 0,
+              stderrTail: `unparseable docker output: ${String(cause)}`,
+            }),
+        });
+
+    const listProjects = (): Effect.Effect<ReadonlyArray<ComposeProject>, ComposeCommandError> => {
+      const argv = ["compose", "ls", "-a", "--format", "json"];
+      return dockerRun(argv).pipe(Effect.flatMap(parseWith(argv, parseComposeLs)));
     };
+
+    const listLabeledContainers = (): Effect.Effect<
+      ReadonlyArray<LabeledContainer>,
+      ComposeCommandError
+    > => {
+      const argv = ["ps", "-a", "--filter", "label=dev.basaltbytes.oad=1", "--format", "json"];
+      return dockerRun(argv).pipe(Effect.flatMap(parseWith(argv, parseLabeledPs)));
+    };
+
+    const removeByLabel = (composeProject: string): Effect.Effect<void, ComposeCommandError> =>
+      Effect.gen(function* () {
+        const filter = `label=com.docker.compose.project=${composeProject}`;
+        const ids = splitLines((yield* dockerRun(["ps", "-aq", "--filter", filter])).stdout);
+        if (ids.length > 0) yield* dockerRun(["rm", "-f", ...ids]);
+        const volumes = splitLines(
+          (yield* dockerRun(["volume", "ls", "-q", "--filter", filter])).stdout,
+        );
+        if (volumes.length > 0) yield* dockerRun(["volume", "rm", ...volumes]);
+      });
 
     return {
       ensureAvailable: () =>
@@ -234,6 +333,8 @@ export const DockerComposeLive = Layer.effect(
         }),
 
       listProjects,
+      listLabeledContainers,
+      removeByLabel,
       run,
       tryRun,
 
