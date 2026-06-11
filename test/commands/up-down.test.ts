@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
+import { Effect } from "effect";
 import { buildUpPlan } from "../../src/commands/up.js";
 import { buildDownArgs, guardDown } from "../../src/commands/down.js";
 import { SharedDatabaseProtectionError } from "../../src/errors/errors.js";
 import { normalizeConfig, validateConfigInput } from "../../src/config/schema.js";
 import { buildWorktreeContext } from "../../src/core/worktree-context.js";
+import { runSyncFailure, runSyncSuccess } from "../helpers.js";
 
-const recipe = normalizeConfig(
+const recipe = runSyncSuccess(
   validateConfigInput({
     project: { id: "kl", dbPrefix: "kl", sharedDatabase: "kl_e2e_demo", sharedBranches: ["main"] },
     odoo: { version: "18.0", addons: [{ host: "addons", container: "/mnt/c" }] },
@@ -19,20 +21,24 @@ const recipe = normalizeConfig(
         env: { VITE_DB: "$ODOO_DATABASE" },
       },
     ],
+  }).pipe(Effect.flatMap(normalizeConfig)),
+);
+const onMain = runSyncSuccess(
+  buildWorktreeContext({
+    rootDir: "/w",
+    recipe,
+    env: {},
+    git: { _tag: "Branch", branch: "main" },
   }),
 );
-const onMain = buildWorktreeContext({
-  rootDir: "/w",
-  recipe,
-  env: {},
-  git: { _tag: "Branch", branch: "main" },
-});
-const onFeature = buildWorktreeContext({
-  rootDir: "/w",
-  recipe,
-  env: {},
-  git: { _tag: "Branch", branch: "feature/z" },
-});
+const onFeature = runSyncSuccess(
+  buildWorktreeContext({
+    rootDir: "/w",
+    recipe,
+    env: {},
+    git: { _tag: "Branch", branch: "feature/z" },
+  }),
+);
 
 describe("buildUpPlan", () => {
   it("builds compose args and companion specs with injected env", () => {
@@ -66,12 +72,18 @@ describe("buildUpPlan", () => {
 
 describe("down guard", () => {
   it("refuses --volumes on the shared database without --allow-shared", () => {
-    expect(() => guardDown(recipe, onMain, { volumes: true, allowShared: false })).toThrow(
-      SharedDatabaseProtectionError,
-    );
-    expect(() => guardDown(recipe, onMain, { volumes: false, allowShared: false })).not.toThrow();
-    expect(() => guardDown(recipe, onFeature, { volumes: true, allowShared: false })).not.toThrow();
-    expect(() => guardDown(recipe, onMain, { volumes: true, allowShared: true })).not.toThrow();
+    expect(
+      runSyncFailure(guardDown(recipe, onMain, { volumes: true, allowShared: false })),
+    ).toBeInstanceOf(SharedDatabaseProtectionError);
+    expect(() =>
+      runSyncSuccess(guardDown(recipe, onMain, { volumes: false, allowShared: false })),
+    ).not.toThrow();
+    expect(() =>
+      runSyncSuccess(guardDown(recipe, onFeature, { volumes: true, allowShared: false })),
+    ).not.toThrow();
+    expect(() =>
+      runSyncSuccess(guardDown(recipe, onMain, { volumes: true, allowShared: true })),
+    ).not.toThrow();
   });
 
   it("buildDownArgs maps --volumes", () => {

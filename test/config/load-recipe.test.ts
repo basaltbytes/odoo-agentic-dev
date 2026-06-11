@@ -5,6 +5,7 @@ import { join, resolve } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { Effect } from "effect";
 import { discoverConfigPath, loadRecipe } from "../../src/config/load-recipe.js";
+import { runSyncSuccess } from "../helpers.js";
 
 const SRC_INDEX = resolve(import.meta.dirname, "../../src/index.ts");
 const tmp: Array<string> = [];
@@ -31,14 +32,16 @@ describe("discoverConfigPath", () => {
     const dir = makeProject(VALID);
     const nested = join(dir, "a/b");
     mkdirSync(nested, { recursive: true });
-    expect(discoverConfigPath(dir)).toBe(join(dir, "odoo-agentic-dev.config.ts"));
-    expect(discoverConfigPath(nested)).toBe(join(dir, "odoo-agentic-dev.config.ts"));
+    expect(runSyncSuccess(discoverConfigPath(dir))).toBe(join(dir, "odoo-agentic-dev.config.ts"));
+    expect(runSyncSuccess(discoverConfigPath(nested))).toBe(
+      join(dir, "odoo-agentic-dev.config.ts"),
+    );
   });
 
   it("returns undefined when nothing is found", () => {
     const dir = mkdtempSync(join(tmpdir(), "oad-empty-"));
     tmp.push(dir);
-    expect(discoverConfigPath(dir)).toBeUndefined();
+    expect(runSyncSuccess(discoverConfigPath(dir))).toBeUndefined();
   });
 });
 

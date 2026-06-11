@@ -1,20 +1,27 @@
 import { describe, expect, it } from "vitest";
+import { Effect } from "effect";
 import { normalizeConfig, validateConfigInput } from "../../src/config/schema.js";
 import { ConfigValidationError } from "../../src/errors/errors.js";
+import { runSyncFailure, runSyncSuccess } from "../helpers.js";
 
 const minimal = {
   project: { id: "billing-odoo", dbPrefix: "billing" },
   odoo: { version: "18.0", addons: [{ host: "addons", container: "/mnt/extra-addons/custom" }] },
 };
 
+const normalized = (input: unknown) =>
+  validateConfigInput(input).pipe(Effect.flatMap(normalizeConfig));
+
 describe("validateConfigInput", () => {
   it("accepts a minimal config", () => {
-    expect(validateConfigInput(minimal)).toEqual(minimal);
+    expect(runSyncSuccess(validateConfigInput(minimal))).toEqual(minimal);
   });
 
   it("rejects a non-object and missing required fields", () => {
-    expect(() => validateConfigInput("nope")).toThrow(ConfigValidationError);
-    expect(() => validateConfigInput({ project: { id: "x" } })).toThrow(ConfigValidationError);
+    expect(runSyncFailure(validateConfigInput("nope"))).toBeInstanceOf(ConfigValidationError);
+    expect(runSyncFailure(validateConfigInput({ project: { id: "x" } }))).toBeInstanceOf(
+      ConfigValidationError,
+    );
   });
 
   it("rejects an unknown hook type", () => {
@@ -22,13 +29,13 @@ describe("validateConfigInput", () => {
       ...minimal,
       database: { postInit: [{ type: "winrm-exec", cmd: "x" }] },
     };
-    expect(() => validateConfigInput(bad)).toThrow(ConfigValidationError);
+    expect(runSyncFailure(validateConfigInput(bad))).toBeInstanceOf(ConfigValidationError);
   });
 });
 
 describe("normalizeConfig", () => {
   it("applies every documented default", () => {
-    const cfg = normalizeConfig(validateConfigInput(minimal));
+    const cfg = runSyncSuccess(normalized(minimal));
     expect(cfg.ports).toEqual({ odooBase: 18069, companionBase: 28000, range: 1000 });
     expect(cfg.odoo.serviceName).toBe("odoo");
     expect(cfg.odoo.databaseServiceName).toBe("db");
@@ -43,8 +50,8 @@ describe("normalizeConfig", () => {
   });
 
   it("defaults sharedBranches to main/master when sharedDatabase is set", () => {
-    const cfg = normalizeConfig(
-      validateConfigInput({
+    const cfg = runSyncSuccess(
+      normalized({
         ...minimal,
         project: { ...minimal.project, sharedDatabase: "billing_dev" },
       }),
@@ -86,12 +93,14 @@ describe("normalizeConfig", () => {
       /outside/i,
     ],
   ])("rejects %s", (_label, input, pattern) => {
-    expect(() => normalizeConfig(validateConfigInput(input))).toThrow(pattern);
+    const error = runSyncFailure(normalized(input));
+    expect(error).toBeInstanceOf(ConfigValidationError);
+    expect(error.message).toMatch(pattern);
   });
 
   it("allows addon outside repo when explicitly flagged", () => {
-    const cfg = normalizeConfig(
-      validateConfigInput({
+    const cfg = runSyncSuccess(
+      normalized({
         ...minimal,
         odoo: {
           version: "18.0",

@@ -142,33 +142,35 @@ export const DockerComposeLive = Layer.effect(
         ),
 
       prepareComposeFile: (recipe, ctx) =>
-        Effect.try({
-          try: () => {
-            if (recipe.compose.file !== null) {
-              const file = isAbsolute(recipe.compose.file)
-                ? recipe.compose.file
-                : resolve(ctx.rootDir, recipe.compose.file);
-              return {
-                projectName: ctx.composeProjectName,
-                composeFile: file,
-                projectDir: ctx.rootDir,
-              };
-            }
-            const file = join(ctx.rootDir, GENERATED_COMPOSE_RELATIVE_PATH);
-            mkdirSync(dirname(file), { recursive: true });
-            writeFileSync(file, renderComposeYaml(buildComposeModel(recipe, ctx)));
+        Effect.gen(function* () {
+          if (recipe.compose.file !== null) {
+            const file = isAbsolute(recipe.compose.file)
+              ? recipe.compose.file
+              : resolve(ctx.rootDir, recipe.compose.file);
             return {
               projectName: ctx.composeProjectName,
               composeFile: file,
               projectDir: ctx.rootDir,
             };
-          },
-          catch: (cause) =>
-            new ComposeCommandError({
-              args: ["<prepare>"],
-              exitCode: -1,
-              stderrTail: String(cause),
-            }),
+          }
+          const file = join(ctx.rootDir, GENERATED_COMPOSE_RELATIVE_PATH);
+          yield* Effect.try({
+            try: () => {
+              mkdirSync(dirname(file), { recursive: true });
+              writeFileSync(file, renderComposeYaml(buildComposeModel(recipe, ctx)));
+            },
+            catch: (cause) =>
+              new ComposeCommandError({
+                args: ["<prepare>"],
+                exitCode: -1,
+                stderrTail: String(cause),
+              }),
+          });
+          return {
+            projectName: ctx.composeProjectName,
+            composeFile: file,
+            projectDir: ctx.rootDir,
+          };
         }),
 
       run: (ref, args) => run(ref, args),

@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
 import { basename } from "node:path";
+import { Effect } from "effect";
 import { ConfigValidationError } from "../errors/errors.js";
+import type { UnsafeDatabaseNameError } from "../errors/errors.js";
 import type { OdooAgenticDevConfig } from "./project-recipe.js";
 import { deriveDatabaseName } from "./database-name.js";
 import { derivePorts } from "./port-allocator.js";
@@ -22,17 +24,21 @@ export type WorktreeContext = {
   readonly env: Record<string, string>;
 };
 
-const resolveEnvDatabase = (env: Record<string, string | undefined>): string | undefined => {
+const resolveEnvDatabase = (
+  env: Record<string, string | undefined>,
+): Effect.Effect<string | undefined, ConfigValidationError> => {
   const primary = env["ODOO_DATABASE"];
   const alias = env["E2E_ODOO_DB"];
   if (primary !== undefined && alias !== undefined && primary !== alias) {
-    throw new ConfigValidationError({
-      issues: [
-        `ODOO_DATABASE ("${primary}") and E2E_ODOO_DB ("${alias}") disagree; unset one of them`,
-      ],
-    });
+    return Effect.fail(
+      new ConfigValidationError({
+        issues: [
+          `ODOO_DATABASE ("${primary}") and E2E_ODOO_DB ("${alias}") disagree; unset one of them`,
+        ],
+      }),
+    );
   }
-  return primary ?? alias;
+  return Effect.succeed(primary ?? alias);
 };
 
 const fallbackWorktreeName = (rootDir: string): string =>
@@ -43,56 +49,58 @@ export const buildWorktreeContext = (options: {
   readonly recipe: OdooAgenticDevConfig;
   readonly env: Record<string, string | undefined>;
   readonly git: GitState;
-}): WorktreeContext => {
-  const { env, git, recipe, rootDir } = options;
+}): Effect.Effect<WorktreeContext, ConfigValidationError | UnsafeDatabaseNameError> =>
+  Effect.gen(function* () {
+    const { env, git, recipe, rootDir } = options;
 
-  const branch = git._tag === "Branch" ? git.branch : undefined;
-  const worktreeName = env["ODOO_WORKTREE_NAME"] ?? branch ?? fallbackWorktreeName(rootDir);
-  // an explicit ODOO_WORKTREE_NAME also redefines what "branch" means for naming
-  const effectiveBranch = env["ODOO_WORKTREE_NAME"] ?? branch;
+    const branch = git._tag === "Branch" ? git.branch : undefined;
+    const worktreeName = env["ODOO_WORKTREE_NAME"] ?? branch ?? fallbackWorktreeName(rootDir);
+    // an explicit ODOO_WORKTREE_NAME also redefines what "branch" means for naming
+    const effectiveBranch = env["ODOO_WORKTREE_NAME"] ?? branch;
 
-  const databaseName = deriveDatabaseName({
-    branch: effectiveBranch,
-    worktreeName,
-    dbPrefix: recipe.project.dbPrefix,
-    sharedDatabase: recipe.project.sharedDatabase,
-    sharedBranches: recipe.project.sharedBranches,
-    envDatabase: resolveEnvDatabase(env),
+    const envDatabase = yield* resolveEnvDatabase(env);
+    const databaseName = yield* deriveDatabaseName({
+      branch: effectiveBranch,
+      worktreeName,
+      dbPrefix: recipe.project.dbPrefix,
+      sharedDatabase: recipe.project.sharedDatabase,
+      sharedBranches: recipe.project.sharedBranches,
+      envDatabase,
+    });
+
+    const { companionPorts, odooHttpPort } = yield* derivePorts({
+      databaseName,
+      ports: recipe.ports,
+      companionApps: recipe.companionApps,
+      envHttpPort: env["ODOO_HTTP_PORT"],
+    });
+
+    const composeProjectName = yield* deriveComposeProjectName(recipe.project.id, databaseName);
+    const odooBaseUrl = `http://127.0.0.1:${odooHttpPort}`;
+
+    const canonical: Record<string, string> = {
+      ODOO_DATABASE: databaseName,
+      E2E_ODOO_DB: databaseName,
+      ODOO_BASE_URL: odooBaseUrl,
+      ODOO_HTTP_PORT: String(odooHttpPort),
+      ODOO_COMPOSE_PROJECT_NAME: composeProjectName,
+    };
+    const aliased: Record<string, string> = {};
+    for (const [alias, target] of Object.entries(recipe.envAliases)) {
+      aliased[alias] = canonical[target]!;
+    }
+
+    return {
+      rootDir,
+      worktreeName,
+      databaseName,
+      composeProjectName,
+      odooHttpPort,
+      odooBaseUrl,
+      companionPorts,
+      env: { ...canonical, ...aliased },
+    };
   });
-
-  const { companionPorts, odooHttpPort } = derivePorts({
-    databaseName,
-    ports: recipe.ports,
-    companionApps: recipe.companionApps,
-    envHttpPort: env["ODOO_HTTP_PORT"],
-  });
-
-  const composeProjectName = deriveComposeProjectName(recipe.project.id, databaseName);
-  const odooBaseUrl = `http://127.0.0.1:${odooHttpPort}`;
-
-  const canonical: Record<string, string> = {
-    ODOO_DATABASE: databaseName,
-    E2E_ODOO_DB: databaseName,
-    ODOO_BASE_URL: odooBaseUrl,
-    ODOO_HTTP_PORT: String(odooHttpPort),
-    ODOO_COMPOSE_PROJECT_NAME: composeProjectName,
-  };
-  const aliased: Record<string, string> = {};
-  for (const [alias, target] of Object.entries(recipe.envAliases)) {
-    aliased[alias] = canonical[target]!;
-  }
-
-  return {
-    rootDir,
-    worktreeName,
-    databaseName,
-    composeProjectName,
-    odooHttpPort,
-    odooBaseUrl,
-    companionPorts,
-    env: { ...canonical, ...aliased },
-  };
-};
 
 /** Replace $NAME tokens with values from `env`; unknown tokens are left intact. */
 export const substituteEnvTokens = (value: string, env: Record<string, string>): string =>

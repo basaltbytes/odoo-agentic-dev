@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
+import { Effect } from "effect";
 import { buildWorktreeContext, substituteEnvTokens } from "../../src/core/worktree-context.js";
 import type { GitState } from "../../src/core/worktree-context.js";
 import { normalizeConfig, validateConfigInput } from "../../src/config/schema.js";
 import { ConfigValidationError } from "../../src/errors/errors.js";
 import { fnv1a32 } from "../../src/core/port-allocator.js";
+import { runSyncFailure, runSyncSuccess } from "../helpers.js";
 
-const recipe = normalizeConfig(
+const recipe = runSyncSuccess(
   validateConfigInput({
     project: {
       id: "kriss-laure",
@@ -22,7 +24,7 @@ const recipe = normalizeConfig(
     companionApps: [
       { name: "pwa", cwd: "frontend", command: "pnpm", args: ["dev"], portEnv: "PWA_PORT" },
     ],
-  }),
+  }).pipe(Effect.flatMap(normalizeConfig)),
 );
 
 const onBranch = (branch: string): GitState => ({ _tag: "Branch", branch });
@@ -32,7 +34,7 @@ const build = (git: GitState, env: Record<string, string | undefined> = {}) =>
 
 describe("buildWorktreeContext", () => {
   it("derives the PRD example end to end", () => {
-    const ctx = build(onBranch("feature/KL-123-payment-flow"));
+    const ctx = runSyncSuccess(build(onBranch("feature/KL-123-payment-flow")));
     const offset = fnv1a32("kl_123_payment_flow") % 1000;
     expect(ctx.worktreeName).toBe("feature/KL-123-payment-flow");
     expect(ctx.databaseName).toBe("kl_123_payment_flow");
@@ -43,7 +45,7 @@ describe("buildWorktreeContext", () => {
   });
 
   it("injects canonical env plus aliases", () => {
-    const ctx = build(onBranch("feature/x"));
+    const ctx = runSyncSuccess(build(onBranch("feature/x")));
     expect(ctx.env.ODOO_DATABASE).toBe(ctx.databaseName);
     expect(ctx.env.E2E_ODOO_DB).toBe(ctx.databaseName);
     expect(ctx.env.ODOO_BASE_URL).toBe(ctx.odooBaseUrl);
@@ -54,32 +56,34 @@ describe("buildWorktreeContext", () => {
   });
 
   it("ODOO_WORKTREE_NAME env override beats the branch", () => {
-    const ctx = build(onBranch("feature/x"), { ODOO_WORKTREE_NAME: "custom-name" });
+    const ctx = runSyncSuccess(build(onBranch("feature/x"), { ODOO_WORKTREE_NAME: "custom-name" }));
     expect(ctx.worktreeName).toBe("custom-name");
     expect(ctx.databaseName).toBe("kl_custom_name");
   });
 
   it("agreeing ODOO_DATABASE/E2E_ODOO_DB overrides are honored", () => {
-    const ctx = build(onBranch("main"), { ODOO_DATABASE: "kl_pinned", E2E_ODOO_DB: "kl_pinned" });
+    const ctx = runSyncSuccess(
+      build(onBranch("main"), { ODOO_DATABASE: "kl_pinned", E2E_ODOO_DB: "kl_pinned" }),
+    );
     expect(ctx.databaseName).toBe("kl_pinned");
   });
 
   it("disagreeing ODOO_DATABASE/E2E_ODOO_DB fail", () => {
-    expect(() => build(onBranch("main"), { ODOO_DATABASE: "kl_a", E2E_ODOO_DB: "kl_b" })).toThrow(
-      ConfigValidationError,
-    );
+    expect(
+      runSyncFailure(build(onBranch("main"), { ODOO_DATABASE: "kl_a", E2E_ODOO_DB: "kl_b" })),
+    ).toBeInstanceOf(ConfigValidationError);
   });
 
   it("detached and non-repo states use a deterministic fallback name", () => {
-    const detached = build({ _tag: "Detached" });
-    const again = build({ _tag: "Detached" });
+    const detached = runSyncSuccess(build({ _tag: "Detached" }));
+    const again = runSyncSuccess(build({ _tag: "Detached" }));
     expect(detached.worktreeName).toBe(again.worktreeName);
     expect(detached.worktreeName).toMatch(/^kriss-laure-[0-9a-f]{8}$/);
     expect(detached.databaseName).toMatch(/^kl_kriss_laure_[0-9a-f]{8}$/);
   });
 
   it("shared branch uses the shared database", () => {
-    expect(build(onBranch("main")).databaseName).toBe("kl_e2e_demo");
+    expect(runSyncSuccess(build(onBranch("main"))).databaseName).toBe("kl_e2e_demo");
   });
 });
 

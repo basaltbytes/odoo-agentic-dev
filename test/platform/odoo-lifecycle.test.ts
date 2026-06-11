@@ -8,6 +8,7 @@ import { DockerComposeLive } from "../../src/platform/docker-compose.js";
 import { makeRecordingRunner } from "../../src/testing/fake-adapters.js";
 import { normalizeConfig, validateConfigInput } from "../../src/config/schema.js";
 import { buildWorktreeContext } from "../../src/core/worktree-context.js";
+import { runSyncSuccess } from "../helpers.js";
 
 const tmp: Array<string> = [];
 afterAll(() => {
@@ -17,20 +18,22 @@ afterAll(() => {
 const makeEnv = (extraConfig: Record<string, unknown> = {}) => {
   const rootDir = mkdtempSync(join(tmpdir(), "oad-lc-"));
   tmp.push(rootDir);
-  const recipe = normalizeConfig(
+  const recipe = runSyncSuccess(
     validateConfigInput({
       project: { id: "kl", dbPrefix: "kl" },
       odoo: { version: "18.0", addons: [{ host: "addons", container: "/mnt/c" }] },
       database: { initialModules: ["KL_setup"], withoutDemo: "all" },
       ...extraConfig,
+    }).pipe(Effect.flatMap(normalizeConfig)),
+  );
+  const ctx = runSyncSuccess(
+    buildWorktreeContext({
+      rootDir,
+      recipe,
+      env: {},
+      git: { _tag: "Branch", branch: "feature/z" },
     }),
   );
-  const ctx = buildWorktreeContext({
-    rootDir,
-    recipe,
-    env: {},
-    git: { _tag: "Branch", branch: "feature/z" },
-  });
   const recording = makeRecordingRunner();
   const layer = Layer.provide(
     OdooLifecycleLive,

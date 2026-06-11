@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import { ConfigValidationError } from "../errors/errors.js";
 
 /** FNV-1a 32-bit hash; stable basis for port offsets. */
@@ -19,7 +20,10 @@ export const derivePorts = (options: {
   };
   readonly companionApps: ReadonlyArray<{ readonly name: string }>;
   readonly envHttpPort: string | undefined;
-}): { readonly odooHttpPort: number; readonly companionPorts: ReadonlyMap<string, number> } => {
+}): Effect.Effect<
+  { readonly odooHttpPort: number; readonly companionPorts: ReadonlyMap<string, number> },
+  ConfigValidationError
+> => {
   const offset = fnv1a32(options.databaseName) % options.ports.range;
 
   let odooHttpPort = options.ports.odooBase + offset;
@@ -31,9 +35,11 @@ export const derivePorts = (options: {
       parsed < 1 ||
       parsed > 65535
     ) {
-      throw new ConfigValidationError({
-        issues: [`ODOO_HTTP_PORT must be an integer port, got "${options.envHttpPort}"`],
-      });
+      return Effect.fail(
+        new ConfigValidationError({
+          issues: [`ODOO_HTTP_PORT must be an integer port, got "${options.envHttpPort}"`],
+        }),
+      );
     }
     odooHttpPort = parsed;
   }
@@ -43,5 +49,5 @@ export const derivePorts = (options: {
     companionPorts.set(app.name, options.ports.companionBase + offset + index);
   });
 
-  return { odooHttpPort, companionPorts };
+  return Effect.succeed({ odooHttpPort, companionPorts });
 };

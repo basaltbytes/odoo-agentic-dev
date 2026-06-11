@@ -1,4 +1,4 @@
-import { Schema } from "effect";
+import { Effect, Schema } from "effect";
 import { ConfigValidationError } from "../errors/errors.js";
 import type { OdooAgenticDevConfig, OdooAgenticDevConfigInput } from "../core/project-recipe.js";
 import { CANONICAL_ENV_VARS } from "../core/project-recipe.js";
@@ -92,22 +92,22 @@ const ConfigInputSchema = Schema.Struct({
   companionApps: Schema.optional(Schema.Array(CompanionAppSchema)),
 });
 
-/** Structural validation. Throws ConfigValidationError with readable issues. */
-export const validateConfigInput = (input: unknown): OdooAgenticDevConfigInput => {
-  try {
-    return Schema.decodeUnknownSync(ConfigInputSchema)(input) as OdooAgenticDevConfigInput;
-  } catch (error) {
-    throw new ConfigValidationError({
-      issues: [String(error instanceof Error ? error.message : error)],
-    });
-  }
-};
+/** Structural validation. Fails with ConfigValidationError carrying readable issues. */
+export const validateConfigInput = (
+  input: unknown,
+): Effect.Effect<OdooAgenticDevConfigInput, ConfigValidationError> =>
+  Schema.decodeUnknownEffect(ConfigInputSchema)(input).pipe(
+    Effect.mapError((error) => new ConfigValidationError({ issues: [error.message] })),
+    Effect.map((decoded) => decoded as OdooAgenticDevConfigInput),
+  );
 
 export const DB_PREFIX_PATTERN = /^[a-z][a-z0-9]*$/;
 export const COMPANION_NAME_PATTERN = /^[a-z][a-z0-9-]*$/;
 
-/** Defaults + cross-field rules. Throws ConfigValidationError listing every issue. */
-export const normalizeConfig = (input: OdooAgenticDevConfigInput): OdooAgenticDevConfig => {
+/** Defaults + cross-field rules. Fails with one ConfigValidationError listing every issue. */
+export const normalizeConfig = (
+  input: OdooAgenticDevConfigInput,
+): Effect.Effect<OdooAgenticDevConfig, ConfigValidationError> => {
   const issues: Array<string> = [];
 
   if (!DB_PREFIX_PATTERN.test(input.project.dbPrefix)) {
@@ -163,9 +163,9 @@ export const normalizeConfig = (input: OdooAgenticDevConfigInput): OdooAgenticDe
     issues.push("project.sharedBranches is set but project.sharedDatabase is missing");
   }
 
-  if (issues.length > 0) throw new ConfigValidationError({ issues });
+  if (issues.length > 0) return Effect.fail(new ConfigValidationError({ issues }));
 
-  return {
+  return Effect.succeed({
     project: {
       id: input.project.id,
       dbPrefix: input.project.dbPrefix,
@@ -199,5 +199,5 @@ export const normalizeConfig = (input: OdooAgenticDevConfigInput): OdooAgenticDe
     test: { profiles: input.test?.profiles ?? {} },
     envAliases: input.envAliases ?? {},
     companionApps: input.companionApps ?? [],
-  };
+  });
 };

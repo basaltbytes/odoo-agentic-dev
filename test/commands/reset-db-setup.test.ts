@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
+import { Effect } from "effect";
 import { guardReset, parseModulesFlag } from "../../src/commands/reset-db.js";
 import { buildSetupSteps } from "../../src/commands/setup.js";
 import { SharedDatabaseProtectionError } from "../../src/errors/errors.js";
 import { normalizeConfig, validateConfigInput } from "../../src/config/schema.js";
 import { buildWorktreeContext } from "../../src/core/worktree-context.js";
+import { runSyncFailure, runSyncSuccess } from "../helpers.js";
 
-const recipe = normalizeConfig(
+const recipe = runSyncSuccess(
   validateConfigInput({
     project: { id: "kl", dbPrefix: "kl", sharedDatabase: "kl_e2e_demo", sharedBranches: ["main"] },
     odoo: { version: "18.0", addons: [{ host: "addons", container: "/mnt/c" }] },
@@ -16,26 +18,32 @@ const recipe = normalizeConfig(
         { cwd: "frontend", command: "pnpm", args: ["install"] },
       ],
     },
+  }).pipe(Effect.flatMap(normalizeConfig)),
+);
+const onMain = runSyncSuccess(
+  buildWorktreeContext({
+    rootDir: "/w",
+    recipe,
+    env: {},
+    git: { _tag: "Branch", branch: "main" },
   }),
 );
-const onMain = buildWorktreeContext({
-  rootDir: "/w",
-  recipe,
-  env: {},
-  git: { _tag: "Branch", branch: "main" },
-});
-const onFeature = buildWorktreeContext({
-  rootDir: "/w",
-  recipe,
-  env: {},
-  git: { _tag: "Branch", branch: "feature/q" },
-});
+const onFeature = runSyncSuccess(
+  buildWorktreeContext({
+    rootDir: "/w",
+    recipe,
+    env: {},
+    git: { _tag: "Branch", branch: "feature/q" },
+  }),
+);
 
 describe("guardReset", () => {
   it("protects the shared database", () => {
-    expect(() => guardReset(recipe, onMain, false)).toThrow(SharedDatabaseProtectionError);
-    expect(() => guardReset(recipe, onMain, true)).not.toThrow();
-    expect(() => guardReset(recipe, onFeature, false)).not.toThrow();
+    expect(runSyncFailure(guardReset(recipe, onMain, false))).toBeInstanceOf(
+      SharedDatabaseProtectionError,
+    );
+    expect(() => runSyncSuccess(guardReset(recipe, onMain, true))).not.toThrow();
+    expect(() => runSyncSuccess(guardReset(recipe, onFeature, false))).not.toThrow();
   });
 });
 

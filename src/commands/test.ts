@@ -1,7 +1,6 @@
 import { Console, Effect, Option } from "effect";
 import { Command, Flag } from "effect/unstable/cli";
 import { ConfigValidationError } from "../errors/errors.js";
-import type { RuntimeError } from "../errors/errors.js";
 import type { OdooAgenticDevConfig } from "../core/project-recipe.js";
 import type { OdooTestOptions } from "../core/command-plan.js";
 import { OdooLifecycle } from "../platform/odoo-lifecycle.js";
@@ -16,28 +15,33 @@ export const resolveTestOptions = (
     readonly logLevel: string | undefined;
     readonly profile: string | undefined;
   },
-): OdooTestOptions & { readonly extraArgs: ReadonlyArray<string> } => {
+): Effect.Effect<
+  OdooTestOptions & { readonly extraArgs: ReadonlyArray<string> },
+  ConfigValidationError
+> => {
   let extraArgs: ReadonlyArray<string> = [];
   if (flags.profile !== undefined) {
     const profile = recipe.test.profiles[flags.profile];
     if (profile === undefined) {
-      throw new ConfigValidationError({
-        issues: [
-          `unknown test profile "${flags.profile}"; available: ${
-            Object.keys(recipe.test.profiles).join(", ") || "(none)"
-          }`,
-        ],
-      });
+      return Effect.fail(
+        new ConfigValidationError({
+          issues: [
+            `unknown test profile "${flags.profile}"; available: ${
+              Object.keys(recipe.test.profiles).join(", ") || "(none)"
+            }`,
+          ],
+        }),
+      );
     }
     extraArgs = profile;
   }
-  return {
+  return Effect.succeed({
     tags: flags.tags,
     file: flags.file,
     module: flags.module,
     logLevel: flags.logLevel,
     extraArgs,
-  };
+  });
 };
 
 export const testCommand = Command.make(
@@ -66,16 +70,12 @@ export const testCommand = Command.make(
           "note: --include-demo has no effect in v1; reset the database with --without-demo=false instead",
         );
       }
-      const options = yield* Effect.try({
-        try: () =>
-          resolveTestOptions(recipe, {
-            tags: Option.getOrUndefined(flags.tags),
-            file: Option.getOrUndefined(flags.file),
-            module: Option.getOrUndefined(flags.module),
-            logLevel: Option.getOrUndefined(flags.logLevel),
-            profile: Option.getOrUndefined(flags.profile),
-          }),
-        catch: (e) => e as RuntimeError,
+      const options = yield* resolveTestOptions(recipe, {
+        tags: Option.getOrUndefined(flags.tags),
+        file: Option.getOrUndefined(flags.file),
+        module: Option.getOrUndefined(flags.module),
+        logLevel: Option.getOrUndefined(flags.logLevel),
+        profile: Option.getOrUndefined(flags.profile),
       });
       const lifecycle = yield* OdooLifecycle;
       const code = yield* lifecycle.runTests(recipe, ctx, options);

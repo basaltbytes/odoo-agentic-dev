@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import { ConfigValidationError, SharedDatabaseProtectionError } from "../errors/errors.js";
 
 const COMPOSE_PROJECT_PATTERN = /^[a-z0-9][a-z0-9_-]*$/;
@@ -11,20 +12,23 @@ export const assertSharedDatabaseAllowed = (options: {
   readonly allowShared: boolean;
   /** command name for the error message, e.g. "reset-db" */
   readonly action: string;
-}): void => {
-  if (isSharedDatabase(options.databaseName, options.sharedDatabase) && !options.allowShared) {
-    throw new SharedDatabaseProtectionError({
-      database: options.databaseName,
-      action: options.action,
-    });
-  }
-};
+}): Effect.Effect<void, SharedDatabaseProtectionError> =>
+  isSharedDatabase(options.databaseName, options.sharedDatabase) && !options.allowShared
+    ? Effect.fail(
+        new SharedDatabaseProtectionError({
+          database: options.databaseName,
+          action: options.action,
+        }),
+      )
+    : Effect.void;
 
-export const assertComposeProjectName = (name: string): string => {
-  if (!COMPOSE_PROJECT_PATTERN.test(name)) {
-    throw new ConfigValidationError({
-      issues: [`compose project name "${name}" is empty or unsafe`],
-    });
-  }
-  return name;
-};
+export const assertComposeProjectName = (
+  name: string,
+): Effect.Effect<string, ConfigValidationError> =>
+  COMPOSE_PROJECT_PATTERN.test(name)
+    ? Effect.succeed(name)
+    : Effect.fail(
+        new ConfigValidationError({
+          issues: [`compose project name "${name}" is empty or unsafe`],
+        }),
+      );

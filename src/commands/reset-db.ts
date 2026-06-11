@@ -5,13 +5,13 @@ import type { WorktreeContext } from "../core/worktree-context.js";
 import { assertSharedDatabaseAllowed } from "../core/safety.js";
 import { OdooLifecycle } from "../platform/odoo-lifecycle.js";
 import { resolveContext } from "./resolve-context.js";
-import type { RuntimeError } from "../errors/errors.js";
+import type { SharedDatabaseProtectionError } from "../errors/errors.js";
 
 export const guardReset = (
   recipe: OdooAgenticDevConfig,
   ctx: WorktreeContext,
   allowShared: boolean,
-): void =>
+): Effect.Effect<void, SharedDatabaseProtectionError> =>
   assertSharedDatabaseAllowed({
     databaseName: ctx.databaseName,
     sharedDatabase: recipe.project.sharedDatabase,
@@ -39,10 +39,7 @@ export const resetDbCommand = Command.make(
   (flags) =>
     Effect.gen(function* () {
       const { ctx, recipe } = yield* resolveContext(flags.config);
-      yield* Effect.try({
-        try: () => guardReset(recipe, ctx, flags.allowShared),
-        catch: (e) => e as RuntimeError,
-      });
+      yield* guardReset(recipe, ctx, flags.allowShared);
       yield* Console.log(`Resetting database: ${ctx.databaseName}`);
       yield* Console.log(`Compose project:    ${ctx.composeProjectName}`);
       const lifecycle = yield* OdooLifecycle;

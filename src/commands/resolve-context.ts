@@ -25,9 +25,6 @@ export const resolveContext = (
     });
     const git = yield* Git;
     const gitState = yield* git.state(rootDir);
-    const ctx = yield* Effect.try({
-      try: () => buildWorktreeContext({ rootDir, recipe, env, git: gitState }),
-      catch: (cause) => cause as RuntimeError,
-    });
+    const ctx = yield* buildWorktreeContext({ rootDir, recipe, env, git: gitState });
     return { recipe, ctx };
   });

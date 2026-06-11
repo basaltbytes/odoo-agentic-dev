@@ -14,6 +14,7 @@ import { normalizeConfig, validateConfigInput } from "../../src/config/schema.js
 import { GENERATED_COMPOSE_RELATIVE_PATH } from "../../src/core/compose-model.js";
 import { DockerUnavailableError } from "../../src/errors/errors.js";
 import type { ExecSpec, ExecResult } from "../../src/platform/command-runner.js";
+import { runSyncSuccess } from "../helpers.js";
 
 const tmp: Array<string> = [];
 afterAll(() => {
@@ -23,18 +24,20 @@ afterAll(() => {
 const makeEnv = (script?: (spec: ExecSpec) => ExecResult | undefined) => {
   const rootDir = mkdtempSync(join(tmpdir(), "oad-dc-"));
   tmp.push(rootDir);
-  const recipe = normalizeConfig(
+  const recipe = runSyncSuccess(
     validateConfigInput({
       project: { id: "fixture", dbPrefix: "fx" },
       odoo: { version: "18.0", addons: [{ host: "addons", container: "/mnt/c" }] },
+    }).pipe(Effect.flatMap(normalizeConfig)),
+  );
+  const ctx = runSyncSuccess(
+    buildWorktreeContext({
+      rootDir,
+      recipe,
+      env: {},
+      git: { _tag: "Branch", branch: "feature/y" },
     }),
   );
-  const ctx = buildWorktreeContext({
-    rootDir,
-    recipe,
-    env: {},
-    git: { _tag: "Branch", branch: "feature/y" },
-  });
   const recording = makeRecordingRunner(script);
   const run = <A, E>(effect: Effect.Effect<A, E, any>) =>
     Effect.runPromise(
@@ -82,12 +85,12 @@ describe("DockerComposeLive", () => {
 
   it("prepareComposeFile honors the project-supplied escape hatch", async () => {
     const { ctx, rootDir, run } = makeEnv();
-    const recipe = normalizeConfig(
+    const recipe = runSyncSuccess(
       validateConfigInput({
         project: { id: "fixture", dbPrefix: "fx" },
         odoo: { version: "18.0", addons: [{ host: "addons", container: "/mnt/c" }] },
         compose: { file: "docker-compose.worktree.yml" },
-      }),
+      }).pipe(Effect.flatMap(normalizeConfig)),
     );
     const ref = await run(
       Effect.gen(function* () {

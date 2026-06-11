@@ -10,7 +10,6 @@ import { resolveContext } from "./resolve-context.js";
 import { guardReset } from "./reset-db.js";
 import { buildInfoText } from "./info.js";
 import { CommandFailedError } from "../errors/errors.js";
-import type { RuntimeError } from "../errors/errors.js";
 
 export type SetupStep =
   | { readonly kind: "submodules" }
@@ -86,10 +85,7 @@ export const setupCommand = Command.make(
             break;
           }
           case "reset-db":
-            yield* Effect.try({
-              try: () => guardReset(recipe, ctx, flags.allowShared),
-              catch: (e) => e as RuntimeError,
-            });
+            yield* guardReset(recipe, ctx, flags.allowShared);
             yield* Console.log(`Resetting database: ${ctx.databaseName}`);
             yield* lifecycle.resetDatabase(recipe, ctx, {});
             yield* lifecycle.runPostInitHooks(recipe, ctx);

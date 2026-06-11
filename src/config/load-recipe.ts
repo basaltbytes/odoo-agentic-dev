@@ -2,7 +2,8 @@ import { existsSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { Effect } from "effect";
 import { createJiti } from "jiti";
-import { ConfigLoadError, ConfigValidationError } from "../errors/errors.js";
+import { ConfigLoadError } from "../errors/errors.js";
+import type { ConfigValidationError } from "../errors/errors.js";
 import type { OdooAgenticDevConfig } from "../core/project-recipe.js";
 import { normalizeConfig, validateConfigInput } from "./schema.js";
 
@@ -14,18 +15,19 @@ export const CONFIG_FILENAMES = [
 ] as const;
 
 /** Walk from startDir upward; first directory containing a config file wins. */
-export const discoverConfigPath = (startDir: string): string | undefined => {
-  let dir = resolve(startDir);
-  for (;;) {
-    for (const filename of CONFIG_FILENAMES) {
-      const candidate = join(dir, filename);
-      if (existsSync(candidate)) return candidate;
+export const discoverConfigPath = (startDir: string): Effect.Effect<string | undefined> =>
+  Effect.sync(() => {
+    let dir = resolve(startDir);
+    for (;;) {
+      for (const filename of CONFIG_FILENAMES) {
+        const candidate = join(dir, filename);
+        if (existsSync(candidate)) return candidate;
+      }
+      const parent = dirname(dir);
+      if (parent === dir) return undefined;
+      dir = parent;
     }
-    const parent = dirname(dir);
-    if (parent === dir) return undefined;
-    dir = parent;
-  }
-};
+  });
 
 const jiti = createJiti(import.meta.url, { interopDefault: true });
 
@@ -44,7 +46,7 @@ export const loadRecipe = (options: {
         ? isAbsolute(override)
           ? override
           : resolve(options.cwd, override)
-        : discoverConfigPath(options.cwd);
+        : yield* discoverConfigPath(options.cwd);
 
     if (path === undefined) {
       return yield* Effect.fail(
@@ -63,10 +65,8 @@ export const loadRecipe = (options: {
       catch: (cause) => new ConfigLoadError({ path, reason: String(cause) }),
     });
 
-    const recipe = yield* Effect.try({
-      try: () => normalizeConfig(validateConfigInput(raw)),
-      catch: (cause) => cause as ConfigValidationError,
-    });
+    const input = yield* validateConfigInput(raw);
+    const recipe = yield* normalizeConfig(input);
 
     return { rootDir: dirname(path), recipe };
   });

@@ -1,10 +1,12 @@
 // test/commands/info.test.ts
 import { describe, expect, it } from "vitest";
+import { Effect } from "effect";
 import { buildInfoJson, buildInfoText } from "../../src/commands/info.js";
 import { buildWorktreeContext } from "../../src/core/worktree-context.js";
 import { normalizeConfig, validateConfigInput } from "../../src/config/schema.js";
+import { runSyncSuccess } from "../helpers.js";
 
-const recipe = normalizeConfig(
+const recipe = runSyncSuccess(
   validateConfigInput({
     project: {
       id: "kriss-laure",
@@ -17,15 +19,17 @@ const recipe = normalizeConfig(
     companionApps: [
       { name: "pwa", cwd: "frontend", command: "pnpm", args: ["dev"], portEnv: "PWA_PORT" },
     ],
-  }),
+  }).pipe(Effect.flatMap(normalizeConfig)),
 );
 
-const ctx = buildWorktreeContext({
-  rootDir: "/work/kl",
-  recipe,
-  env: {},
-  git: { _tag: "Branch", branch: "feature/KL-123-payment-flow" },
-});
+const ctx = runSyncSuccess(
+  buildWorktreeContext({
+    rootDir: "/work/kl",
+    recipe,
+    env: {},
+    git: { _tag: "Branch", branch: "feature/KL-123-payment-flow" },
+  }),
+);
 
 describe("info output", () => {
   it("text output contains the PRD-required lines", () => {

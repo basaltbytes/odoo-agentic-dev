@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
+import { Effect } from "effect";
 import { parse } from "yaml";
 import { buildComposeModel, renderComposeYaml } from "../../src/core/compose-model.js";
 import { buildWorktreeContext } from "../../src/core/worktree-context.js";
 import { normalizeConfig, validateConfigInput } from "../../src/config/schema.js";
+import { runSyncSuccess } from "../helpers.js";
 
-const recipe = normalizeConfig(
+const recipe = runSyncSuccess(
   validateConfigInput({
     project: { id: "kriss-laure", dbPrefix: "kl" },
     odoo: {
@@ -17,14 +19,16 @@ const recipe = normalizeConfig(
         { host: "backend/addons/OCA", container: "/mnt/extra-addons/OCA" },
       ],
     },
+  }).pipe(Effect.flatMap(normalizeConfig)),
+);
+const ctx = runSyncSuccess(
+  buildWorktreeContext({
+    rootDir: "/work/kl",
+    recipe,
+    env: {},
+    git: { _tag: "Branch", branch: "feature/x" },
   }),
 );
-const ctx = buildWorktreeContext({
-  rootDir: "/work/kl",
-  recipe,
-  env: {},
-  git: { _tag: "Branch", branch: "feature/x" },
-});
 const model = buildComposeModel(recipe, ctx);
 
 describe("buildComposeModel", () => {
@@ -39,18 +43,20 @@ describe("buildComposeModel", () => {
   });
 
   it("falls back to the official image without a dockerfile", () => {
-    const plain = normalizeConfig(
+    const plain = runSyncSuccess(
       validateConfigInput({
         project: { id: "x", dbPrefix: "x" },
         odoo: { version: "18.0", addons: [{ host: "addons", container: "/mnt/c" }] },
+      }).pipe(Effect.flatMap(normalizeConfig)),
+    );
+    const plainCtx = runSyncSuccess(
+      buildWorktreeContext({
+        rootDir: "/w",
+        recipe: plain,
+        env: {},
+        git: { _tag: "Branch", branch: "b" },
       }),
     );
-    const plainCtx = buildWorktreeContext({
-      rootDir: "/w",
-      recipe: plain,
-      env: {},
-      git: { _tag: "Branch", branch: "b" },
-    });
     const m = buildComposeModel(plain, plainCtx);
     expect((m.services["odoo"] as Record<string, unknown>)["image"]).toBe("odoo:18.0");
   });

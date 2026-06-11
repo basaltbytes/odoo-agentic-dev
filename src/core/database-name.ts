@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { Effect } from "effect";
 import { UnsafeDatabaseNameError } from "../errors/errors.js";
 
 export const DB_NAME_PATTERN = /^[a-z][a-z0-9_]*$/;
@@ -28,12 +29,12 @@ const sha8 = (input: string): string =>
 const truncate = (name: string): string =>
   name.length <= MAX_DB_NAME_LENGTH ? name : `${name.slice(0, 54)}_${sha8(name)}`;
 
-export const assertSafeDatabaseName = (name: string): string => {
-  if (name.length === 0 || name.length > MAX_DB_NAME_LENGTH || !DB_NAME_PATTERN.test(name)) {
-    throw new UnsafeDatabaseNameError({ name });
-  }
-  return name;
-};
+export const assertSafeDatabaseName = (
+  name: string,
+): Effect.Effect<string, UnsafeDatabaseNameError> =>
+  name.length === 0 || name.length > MAX_DB_NAME_LENGTH || !DB_NAME_PATTERN.test(name)
+    ? Effect.fail(new UnsafeDatabaseNameError({ name }))
+    : Effect.succeed(name);
 
 export const deriveDatabaseName = (options: {
   readonly branch: string | undefined;
@@ -42,7 +43,7 @@ export const deriveDatabaseName = (options: {
   readonly sharedDatabase: string | null;
   readonly sharedBranches: ReadonlyArray<string>;
   readonly envDatabase: string | undefined;
-}): string => {
+}): Effect.Effect<string, UnsafeDatabaseNameError> => {
   if (options.envDatabase !== undefined) return assertSafeDatabaseName(options.envDatabase);
 
   if (

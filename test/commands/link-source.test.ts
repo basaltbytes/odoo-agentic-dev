@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { performLinkSource } from "../../src/commands/link-source.js";
 import { SourceResolverError } from "../../src/errors/errors.js";
+import { runSyncFailure, runSyncSuccess } from "../helpers.js";
 
 const tmp: Array<string> = [];
 afterAll(() => {
@@ -22,13 +23,15 @@ const makeDirs = () => {
 describe("performLinkSource", () => {
   it("creates a .odoo symlink to the resolved target", () => {
     const { project, source } = makeDirs();
-    const linkPath = performLinkSource({
-      rootDir: project,
-      target: source,
-      name: ".odoo",
-      force: false,
-      recipeSource: null,
-    });
+    const linkPath = runSyncSuccess(
+      performLinkSource({
+        rootDir: project,
+        target: source,
+        name: ".odoo",
+        force: false,
+        recipeSource: null,
+      }),
+    );
     expect(linkPath).toBe(join(project, ".odoo"));
     expect(lstatSync(linkPath).isSymbolicLink()).toBe(true);
     expect(readlinkSync(linkPath)).toBe(source);
@@ -37,58 +40,68 @@ describe("performLinkSource", () => {
   it("refuses to overwrite a real directory", () => {
     const { project, source } = makeDirs();
     mkdirSync(join(project, ".odoo"));
-    expect(() =>
-      performLinkSource({
-        rootDir: project,
-        target: source,
-        name: ".odoo",
-        force: false,
-        recipeSource: null,
-      }),
-    ).toThrow(SourceResolverError);
+    expect(
+      runSyncFailure(
+        performLinkSource({
+          rootDir: project,
+          target: source,
+          name: ".odoo",
+          force: false,
+          recipeSource: null,
+        }),
+      ),
+    ).toBeInstanceOf(SourceResolverError);
   });
 
   it("replaces an existing symlink only with force", () => {
     const { project, source } = makeDirs();
     symlinkSync(project, join(project, ".odoo"));
-    expect(() =>
+    expect(
+      runSyncFailure(
+        performLinkSource({
+          rootDir: project,
+          target: source,
+          name: ".odoo",
+          force: false,
+          recipeSource: null,
+        }),
+      ).message,
+    ).toMatch(/--force/);
+    runSyncSuccess(
       performLinkSource({
         rootDir: project,
         target: source,
         name: ".odoo",
-        force: false,
+        force: true,
         recipeSource: null,
       }),
-    ).toThrow(/--force/);
-    performLinkSource({
-      rootDir: project,
-      target: source,
-      name: ".odoo",
-      force: true,
-      recipeSource: null,
-    });
+    );
     expect(readlinkSync(join(project, ".odoo"))).toBe(source);
   });
 
   it("falls back to recipe source, then errors with guidance", () => {
     const { project, source } = makeDirs();
-    const linkPath = performLinkSource({
-      rootDir: project,
-      target: undefined,
-      name: ".odoo",
-      force: false,
-      recipeSource: source,
-    });
-    expect(readlinkSync(linkPath)).toBe(source);
-    rmSync(linkPath);
-    expect(() =>
+    const linkPath = runSyncSuccess(
       performLinkSource({
         rootDir: project,
         target: undefined,
         name: ".odoo",
         force: false,
-        recipeSource: null,
+        recipeSource: source,
       }),
-    ).toThrow(SourceResolverError);
+    );
+    expect(readlinkSync(linkPath)).toBe(source);
+    rmSync(linkPath);
+    expect(
+      runSyncFailure(
+        performLinkSource({
+          rootDir: project,
+          target: undefined,
+          name: ".odoo",
+          force: false,
+          recipeSource: null,
+        }),
+      ),
+    ).toBeInstanceOf(SourceResolverError);
   });
 });
