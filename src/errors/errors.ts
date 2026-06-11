@@ -29,17 +29,29 @@ export class GitError extends Data.TaggedError("GitError")<{
 
 export class UnsafeDatabaseNameError extends Data.TaggedError("UnsafeDatabaseNameError")<{
   readonly name: string
-}> {}
+}> {
+  override get message(): string {
+    return `unsafe database name: "${this.name}"`
+  }
+}
 
 export class SharedDatabaseProtectionError extends Data.TaggedError("SharedDatabaseProtectionError")<{
   readonly database: string
   /** the command the user attempted, e.g. "reset-db" */
   readonly action: string
-}> {}
+}> {
+  override get message(): string {
+    return `refusing to touch shared database "${this.database}" (re-run ${this.action} with --allow-shared)`
+  }
+}
 
 export class DockerUnavailableError extends Data.TaggedError("DockerUnavailableError")<{
   readonly reason: string
-}> {}
+}> {
+  override get message(): string {
+    return this.reason
+  }
+}
 
 export class CommandFailedError extends Data.TaggedError("CommandFailedError")<{
   readonly command: string
@@ -47,28 +59,48 @@ export class CommandFailedError extends Data.TaggedError("CommandFailedError")<{
   readonly cwd: string | undefined
   readonly exitCode: number
   readonly stderrTail: string
-}> {}
+}> {
+  override get message(): string {
+    return `${this.command} ${this.args.join(" ")} exited ${this.exitCode}: ${this.stderrTail}`
+  }
+}
 
 export class ComposeCommandError extends Data.TaggedError("ComposeCommandError")<{
   readonly args: ReadonlyArray<string>
   readonly exitCode: number
   readonly stderrTail: string
-}> {}
+}> {
+  override get message(): string {
+    return `docker ${this.args.join(" ")} exited ${this.exitCode}: ${this.stderrTail}`
+  }
+}
 
 export class OdooCommandError extends Data.TaggedError("OdooCommandError")<{
   readonly args: ReadonlyArray<string>
   readonly exitCode: number
   readonly stderrTail: string
-}> {}
+}> {
+  override get message(): string {
+    return `docker ${this.args.join(" ")} exited ${this.exitCode}: ${this.stderrTail}`
+  }
+}
 
 export class CompanionProcessError extends Data.TaggedError("CompanionProcessError")<{
   readonly name: string
   readonly exitCode: number
-}> {}
+}> {
+  override get message(): string {
+    return `companion "${this.name}" exited ${this.exitCode}`
+  }
+}
 
 export class SourceResolverError extends Data.TaggedError("SourceResolverError")<{
   readonly reason: string
-}> {}
+}> {
+  override get message(): string {
+    return this.reason
+  }
+}
 
 export type RuntimeError =
   | ConfigLoadError

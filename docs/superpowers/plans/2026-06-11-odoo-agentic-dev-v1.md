@@ -4106,6 +4106,14 @@ git add -A && git commit -m "feat: e2e test, README, CI workflow, and docker int
 
 ## Post-plan notes for the executor
 
+**Verified v4 beta facts discovered during Tasks 1-12 (do not rediscover):**
+- `Effect.catchAll` does not exist — it is `Effect.catch`. `Effect.zipLeft` does not exist either.
+- `ChildProcessSpawner` is not a subpath export; import via `import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process"` and use `ChildProcessSpawner.ChildProcessSpawner`.
+- Child stdin: pass `stdin: Stream.succeed(new TextEncoder().encode(text))` in `ChildProcess.make` options (`"ignore"` when unused) — no manual sink feeding needed.
+- `Data.TaggedError` leaves `Error#message` empty; every error class in `src/errors/errors.ts` now has a `message` getter — regex `toThrow` assertions work as written.
+- Fake layers are typed honestly (`Layer.Layer<CommandRunnerApi>` etc.), not cast to `Layer.Layer<never>`.
+- `resolveContext`'s R type is the shape type (`GitApi`); function-style `Context.Service` keys use shape = identifier.
+
 - **Layer wiring reference (final `cli.ts` services):**
   ```ts
   const services = Layer.mergeAll(
