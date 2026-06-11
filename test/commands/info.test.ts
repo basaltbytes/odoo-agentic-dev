@@ -1,6 +1,6 @@
 // test/commands/info.test.ts
 import { describe, expect, it } from "vitest";
-import { buildInfoJson, buildInfoText } from "../../src/commands/info.js";
+import { buildInfoEnv, buildInfoJson, buildInfoText } from "../../src/commands/info.js";
 import { makeCtx, makeRecipe } from "../helpers.js";
 
 const recipe = makeRecipe({
@@ -12,8 +12,16 @@ const recipe = makeRecipe({
   },
   ports: { odooBase: 18069, companionBase: 28028, range: 1000 },
   odoo: { version: "18.0", addons: [{ host: "addons", container: "/mnt/x" }] },
+  envAliases: { E2E_PWA_PORT: "PWA_PORT" },
   companionApps: [
-    { name: "pwa", cwd: "frontend", command: "pnpm", args: ["dev"], portEnv: "PWA_PORT" },
+    {
+      name: "pwa",
+      cwd: "frontend",
+      command: "pnpm",
+      args: ["dev"],
+      portEnv: "PWA_PORT",
+      urlEnv: "PWA_URL",
+    },
   ],
 });
 
@@ -38,5 +46,13 @@ describe("info output", () => {
     expect(typeof a.odooHttpPort).toBe("number");
     expect(a.companions.pwa).toBe(ctx.companionPorts.get("pwa"));
     expect(a.env.ODOO_DATABASE).toBe("kl_123_payment_flow");
+  });
+
+  it("env output includes companion port/url vars and their aliases", () => {
+    const port = ctx.companionPorts.get("pwa");
+    const lines = buildInfoEnv(ctx).split("\n");
+    expect(lines).toContain(`PWA_PORT=${port}`);
+    expect(lines).toContain(`PWA_URL=http://localhost:${port}`);
+    expect(lines).toContain(`E2E_PWA_PORT=${port}`);
   });
 });

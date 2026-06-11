@@ -1,7 +1,6 @@
 import { Effect, Schema } from "effect";
 import { ConfigValidationError } from "../errors/errors.js";
 import type { OdooAgenticDevConfig, OdooAgenticDevConfigInput } from "../core/project-recipe.js";
-import { CANONICAL_ENV_VARS } from "../core/project-recipe.js";
 import { DEFAULT_STRIP_BRANCH_PREFIXES } from "../core/database-name.js";
 
 const AddonMountSchema = Schema.Struct({
@@ -32,6 +31,7 @@ const CompanionAppSchema = Schema.Struct({
   command: Schema.String,
   args: Schema.Array(Schema.String),
   portEnv: Schema.optional(Schema.String),
+  urlEnv: Schema.optional(Schema.String),
   env: Schema.optional(Schema.Record(Schema.String, Schema.String)),
 });
 
@@ -89,9 +89,9 @@ const ConfigInputSchema = Schema.Struct({
       profiles: Schema.optional(Schema.Record(Schema.String, Schema.Array(Schema.String))),
     }),
   ),
-  envAliases: Schema.optional(
-    Schema.Record(Schema.String, Schema.Literals([...CANONICAL_ENV_VARS])),
-  ),
+  // alias targets are validated against the assembled env at context-build
+  // time (companion portEnv/urlEnv keys are legal targets, not just canonical)
+  envAliases: Schema.optional(Schema.Record(Schema.String, Schema.String)),
   companionApps: Schema.optional(Schema.Array(CompanionAppSchema)),
   cleanup: Schema.optional(
     Schema.Struct({

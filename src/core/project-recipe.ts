@@ -34,6 +34,8 @@ export type CompanionAppConfig = {
   readonly args: ReadonlyArray<string>;
   /** env var name that receives the allocated port */
   readonly portEnv?: string;
+  /** env var name that receives the app's http://localhost:<port> URL */
+  readonly urlEnv?: string;
   /** extra env; values may reference canonical vars as "$ODOO_DATABASE" etc. */
   readonly env?: Readonly<Record<string, string>>;
 };
@@ -96,8 +98,8 @@ export type OdooAgenticDevConfigInput = {
     /** profile name → extra odoo CLI args, e.g. { payment: ["--test-tags", "payment"] } */
     readonly profiles?: Readonly<Record<string, ReadonlyArray<string>>>;
   };
-  /** compatibility aliases: alias env var name → canonical variable */
-  readonly envAliases?: Readonly<Record<string, CanonicalEnvVar>>;
+  /** compatibility aliases: alias env var name → any assembled env key (canonical or companion portEnv/urlEnv) */
+  readonly envAliases?: Readonly<Record<string, string>>;
   readonly companionApps?: ReadonlyArray<CompanionAppConfig>;
   /** stale-environment cleanup: warn by default, prune automatically when auto */
   readonly cleanup?: {
@@ -143,7 +145,7 @@ export type OdooAgenticDevConfig = {
   };
   readonly compose: { readonly file: string | null };
   readonly test: { readonly profiles: Readonly<Record<string, ReadonlyArray<string>>> };
-  readonly envAliases: Readonly<Record<string, CanonicalEnvVar>>;
+  readonly envAliases: Readonly<Record<string, string>>;
   readonly companionApps: ReadonlyArray<CompanionAppConfig>;
   readonly cleanup: { readonly maxAgeDays: number; readonly auto: boolean };
 };

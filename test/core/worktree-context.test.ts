@@ -40,7 +40,7 @@ describe("buildWorktreeContext", () => {
     expect(ctx.companionPorts.get("pwa")).toBe(28028 + offset);
   });
 
-  it("injects canonical env plus aliases", () => {
+  it("injects canonical env plus companion vars plus aliases", () => {
     const ctx = runSyncSuccess(build(onBranch("feature/x")));
     expect(ctx.env.ODOO_DATABASE).toBe(ctx.databaseName);
     expect(ctx.env.E2E_ODOO_DB).toBe(ctx.databaseName);
@@ -49,6 +49,66 @@ describe("buildWorktreeContext", () => {
     expect(ctx.env.ODOO_COMPOSE_PROJECT_NAME).toBe(ctx.composeProjectName);
     expect(ctx.env.KL_WORKTREE_DB_NAME).toBe(ctx.databaseName);
     expect(ctx.env.E2E_BASE_URL).toBe(ctx.odooBaseUrl);
+    expect(ctx.env.PWA_PORT).toBe(String(ctx.companionPorts.get("pwa")));
+  });
+
+  it("companion urlEnv exposes a localhost URL and aliases can retarget companion vars", () => {
+    const withUrlEnv = makeRecipe({
+      project: { id: "kriss-laure", dbPrefix: "kl" },
+      odoo: {
+        version: "18.0",
+        addons: [{ host: "backend/addons/Custom", container: "/mnt/extra-addons/Custom" }],
+      },
+      envAliases: { E2E_PWA_PORT: "PWA_PORT" },
+      companionApps: [
+        {
+          name: "pwa",
+          cwd: "frontend",
+          command: "pnpm",
+          args: ["dev"],
+          portEnv: "PWA_PORT",
+          urlEnv: "E2E_BASE_URL",
+        },
+      ],
+    });
+    const ctx = runSyncSuccess(
+      buildWorktreeContext({
+        rootDir: "/work/kriss-laure",
+        recipe: withUrlEnv,
+        env: {},
+        git: onBranch("feature/x"),
+      }),
+    );
+    const port = ctx.companionPorts.get("pwa");
+    expect(ctx.env.E2E_BASE_URL).toBe(`http://localhost:${port}`);
+    expect(ctx.env.E2E_PWA_PORT).toBe(String(port));
+  });
+
+  it("an alias targeting an unknown env key fails listing the available keys", () => {
+    const broken = makeRecipe({
+      project: { id: "kriss-laure", dbPrefix: "kl" },
+      odoo: {
+        version: "18.0",
+        addons: [{ host: "backend/addons/Custom", container: "/mnt/extra-addons/Custom" }],
+      },
+      envAliases: { MY_ALIAS: "NOT_A_KEY" },
+      companionApps: [
+        { name: "pwa", cwd: "frontend", command: "pnpm", args: ["dev"], portEnv: "PWA_PORT" },
+      ],
+    });
+    const error = runSyncFailure(
+      buildWorktreeContext({
+        rootDir: "/work/kriss-laure",
+        recipe: broken,
+        env: {},
+        git: onBranch("feature/x"),
+      }),
+    );
+    expect(error).toBeInstanceOf(ConfigValidationError);
+    expect(error.message).toContain('"MY_ALIAS"');
+    expect(error.message).toContain('"NOT_A_KEY"');
+    expect(error.message).toContain("ODOO_DATABASE");
+    expect(error.message).toContain("PWA_PORT");
   });
 
   it("ODOO_WORKTREE_NAME env override beats the branch", () => {

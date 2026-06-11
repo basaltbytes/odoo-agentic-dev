@@ -81,16 +81,33 @@ export const buildWorktreeContext = (options: {
     const composeProjectName = yield* deriveComposeProjectName(recipe.project.id, databaseName);
     const odooBaseUrl = `http://127.0.0.1:${odooHttpPort}`;
 
-    const canonical: Record<string, string> = {
+    // env assembly order: canonical → companion vars → aliases
+    const assembled: Record<string, string> = {
       ODOO_DATABASE: databaseName,
       E2E_ODOO_DB: databaseName,
       ODOO_BASE_URL: odooBaseUrl,
       ODOO_HTTP_PORT: String(odooHttpPort),
       ODOO_COMPOSE_PROJECT_NAME: composeProjectName,
     };
+    for (const app of recipe.companionApps) {
+      const port = companionPorts.get(app.name);
+      if (port === undefined) continue;
+      if (app.portEnv !== undefined) assembled[app.portEnv] = String(port);
+      if (app.urlEnv !== undefined) assembled[app.urlEnv] = `http://localhost:${port}`;
+    }
     const aliased: Record<string, string> = {};
     for (const [alias, target] of Object.entries(recipe.envAliases)) {
-      aliased[alias] = canonical[target]!;
+      const value = assembled[target];
+      if (value === undefined) {
+        return yield* Effect.fail(
+          new ConfigValidationError({
+            issues: [
+              `envAliases: alias "${alias}" targets unknown env key "${target}"; available keys: ${Object.keys(assembled).join(", ")}`,
+            ],
+          }),
+        );
+      }
+      aliased[alias] = value;
     }
 
     return {
@@ -102,7 +119,7 @@ export const buildWorktreeContext = (options: {
       odooHttpPort,
       odooBaseUrl,
       companionPorts,
-      env: { ...canonical, ...aliased },
+      env: { ...assembled, ...aliased },
     };
   });
 

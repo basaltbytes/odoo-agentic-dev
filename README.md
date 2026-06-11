@@ -108,6 +108,7 @@ export default defineConfig({
       command: "pnpm",
       args: ["dev", "--host", "0.0.0.0", "--strictPort"],
       portEnv: "PWA_PORT",
+      urlEnv: "E2E_BASE_URL",
       env: {
         VITE_SERVICE_API_URL: "",
         VITE_ODOO_DATA_BASE_NAME: "$ODOO_DATABASE",
@@ -358,7 +359,9 @@ The generated Compose file binds Odoo to the loopback interface only (`127.0.0.1
 | `ODOO_WORKTREE_CONFIG` | Config file path override |
 | `ODOO_AGENTIC_DEV_STATE_DB` | State registry path override (default `${XDG_DATA_HOME:-~/.local/share}/odoo-agentic-dev/state.db`) |
 
-Explicit env overrides win over derived values, but `E2E_ODOO_DB` and `ODOO_DATABASE` must not disagree. Compatibility aliases for existing projects (for example `KL_WORKTREE_DB_NAME`) can be declared in the recipe via `envAliases`.
+Explicit env overrides win over derived values, but `E2E_ODOO_DB` and `ODOO_DATABASE` must not disagree.
+
+Companion apps contribute their own variables to the context env: `portEnv` receives the allocated port and `urlEnv` receives `http://localhost:<port>`; both show up in `info --env` and `info --json`. Compatibility aliases for existing projects (for example `KL_WORKTREE_DB_NAME`) can be declared in the recipe via `envAliases`: an alias may target **any** assembled env key — canonical or companion-provided (`E2E_PWA_PORT: "PWA_PORT"` works) — and an alias targeting an unknown key fails validation listing the available keys.
 
 ## Safety Rules
 
