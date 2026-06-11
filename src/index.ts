@@ -1,0 +1,16 @@
+export {
+  CANONICAL_ENV_VARS,
+  defineOdooAgenticDevConfig
+} from "./core/project-recipe.js"
+export type {
+  CanonicalEnvVar,
+  CompanionAppConfig,
+  OdooAddonMount,
+  OdooAgenticDevConfig,
+  OdooAgenticDevConfigInput,
+  OdooDatabaseConfig,
+  OdooProjectConfig,
+  OdooRuntimeConfig,
+  PackageManagerStep,
+  PostInitHook
+} from "./core/project-recipe.js"
