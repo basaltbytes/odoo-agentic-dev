@@ -2,15 +2,15 @@
   "name": "@basaltbytes/odoo-agentic-dev",
   "version": "0.1.0",
   "description": "Agent-friendly local Odoo development runtime: worktree-isolated databases, ports, and Docker Compose stacks",
-  "type": "module",
   "license": "MIT",
-  "engines": {
-    "node": ">=20"
-  },
   "bin": {
-    "odoo-agentic-dev": "./dist/cli.js",
-    "oad": "./dist/cli.js"
+    "oad": "./dist/cli.js",
+    "odoo-agentic-dev": "./dist/cli.js"
   },
+  "files": [
+    "dist"
+  ],
+  "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -20,9 +20,6 @@
     },
     "./package.json": "./package.json"
   },
-  "files": [
-    "dist"
-  ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "lint": "oxlint .",
@@ -31,13 +28,6 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc -p tsconfig.json"
-  },
-  "devEngines": {
-    "packageManager": {
-      "name": "pnpm",
-      "version": "11.0.8",
-      "onFail": "download"
-    }
   },
   "dependencies": {
     "@effect/platform-node": "4.0.0-beta.78",
@@ -51,5 +41,15 @@
     "typescript": "^6.0.3",
     "vitest": "^4.1.8",
     "yaml": "^2.9.0"
+  },
+  "devEngines": {
+    "packageManager": {
+      "name": "pnpm",
+      "version": "11.0.8",
+      "onFail": "download"
+    }
+  },
+  "engines": {
+    "node": ">=20"
   }
 }
