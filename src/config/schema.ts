@@ -90,6 +90,12 @@ const ConfigInputSchema = Schema.Struct({
     Schema.Record(Schema.String, Schema.Literals([...CANONICAL_ENV_VARS])),
   ),
   companionApps: Schema.optional(Schema.Array(CompanionAppSchema)),
+  cleanup: Schema.optional(
+    Schema.Struct({
+      maxAgeDays: Schema.optional(Schema.Number),
+      auto: Schema.optional(Schema.Boolean),
+    }),
+  ),
 });
 
 /** Structural validation. Fails with ConfigValidationError carrying readable issues. */
@@ -201,5 +207,9 @@ export const normalizeConfig = (
     test: { profiles: input.test?.profiles ?? {} },
     envAliases: input.envAliases ?? {},
     companionApps: input.companionApps ?? [],
+    cleanup: {
+      maxAgeDays: input.cleanup?.maxAgeDays ?? 30,
+      auto: input.cleanup?.auto ?? false,
+    },
   });
 };

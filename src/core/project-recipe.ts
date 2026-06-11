@@ -93,6 +93,11 @@ export type OdooAgenticDevConfigInput = {
   /** compatibility aliases: alias env var name → canonical variable */
   readonly envAliases?: Readonly<Record<string, CanonicalEnvVar>>;
   readonly companionApps?: ReadonlyArray<CompanionAppConfig>;
+  /** stale-environment cleanup: warn by default, prune automatically when auto */
+  readonly cleanup?: {
+    readonly maxAgeDays?: number;
+    readonly auto?: boolean;
+  };
 };
 
 /** Normalized config: every default applied, optionals resolved. */
@@ -132,6 +137,7 @@ export type OdooAgenticDevConfig = {
   readonly test: { readonly profiles: Readonly<Record<string, ReadonlyArray<string>>> };
   readonly envAliases: Readonly<Record<string, CanonicalEnvVar>>;
   readonly companionApps: ReadonlyArray<CompanionAppConfig>;
+  readonly cleanup: { readonly maxAgeDays: number; readonly auto: boolean };
 };
 
 /**

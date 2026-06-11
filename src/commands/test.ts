@@ -5,6 +5,7 @@ import type { OdooAgenticDevConfig } from "../core/project-recipe.js";
 import type { OdooTestOptions } from "../core/command-plan.js";
 import { OdooLifecycle } from "../platform/odoo-lifecycle.js";
 import { resolveContext } from "./resolve-context.js";
+import { recordEnvironment } from "./state-hooks.js";
 
 export const resolveTestOptions = (
   recipe: OdooAgenticDevConfig,
@@ -65,6 +66,7 @@ export const testCommand = Command.make(
   (flags) =>
     Effect.gen(function* () {
       const { ctx, recipe } = yield* resolveContext(flags.config);
+      yield* recordEnvironment(recipe, ctx);
       if (flags.includeDemo) {
         yield* Console.log(
           "note: --include-demo has no effect in v1; reset the database with --without-demo=false instead",

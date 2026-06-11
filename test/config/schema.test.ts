@@ -47,6 +47,12 @@ describe("normalizeConfig", () => {
     expect(cfg.project.sharedBranches).toEqual([]);
     expect(cfg.compose.file).toBeNull();
     expect(cfg.companionApps).toEqual([]);
+    expect(cfg.cleanup).toEqual({ maxAgeDays: 30, auto: false });
+  });
+
+  it("honors explicit cleanup settings", () => {
+    const cfg = runSyncSuccess(normalized({ ...minimal, cleanup: { maxAgeDays: 7, auto: true } }));
+    expect(cfg.cleanup).toEqual({ maxAgeDays: 7, auto: true });
   });
 
   it("defaults sharedBranches to main/master when sharedDatabase is set", () => {

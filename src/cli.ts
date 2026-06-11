@@ -18,6 +18,8 @@ import { GitLive } from "./platform/git.js";
 import { DockerComposeLive } from "./platform/docker-compose.js";
 import { OdooLifecycleLive } from "./platform/odoo-lifecycle.js";
 import { ProcessSupervisorLive } from "./platform/process-supervisor.js";
+import { StateStoreLive } from "./platform/state-store.js";
+import { PortProbeLive } from "./platform/port-probe.js";
 import { isRuntimeError, renderError } from "./errors/errors.js";
 
 const root = Command.make("odoo-agentic-dev").pipe(
@@ -34,7 +36,13 @@ const root = Command.make("odoo-agentic-dev").pipe(
   ]),
 );
 
-const services = Layer.mergeAll(GitLive, OdooLifecycleLive, ProcessSupervisorLive).pipe(
+const services = Layer.mergeAll(
+  GitLive,
+  OdooLifecycleLive,
+  ProcessSupervisorLive,
+  StateStoreLive,
+  PortProbeLive,
+).pipe(
   Layer.provideMerge(DockerComposeLive),
   Layer.provideMerge(CommandRunnerLive),
   Layer.provideMerge(NodeServices.layer),

@@ -8,6 +8,7 @@ import { OdooLifecycle } from "../platform/odoo-lifecycle.js";
 import { CommandRunner, runInheritedOrFail } from "../platform/command-runner.js";
 import { resolveContext } from "./resolve-context.js";
 import { guardReset } from "./reset-db.js";
+import { recordEnvironment, warnOrAutoClean } from "./state-hooks.js";
 import { buildInfoText } from "./info.js";
 
 type SetupStep =
@@ -88,6 +89,8 @@ export const setupCommand = Command.make(
             break;
         }
       }
+      yield* recordEnvironment(recipe, ctx);
       yield* Console.log(buildInfoText(ctx));
+      yield* warnOrAutoClean(recipe, ctx);
     }),
 );

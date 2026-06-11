@@ -1,9 +1,11 @@
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { buildUpPlan } from "../../src/commands/up.js";
-import { buildDownArgs, guardDown } from "../../src/commands/down.js";
+import { buildDownArgs, finalizeDownState, guardDown } from "../../src/commands/down.js";
+import { rowFromContext } from "../../src/commands/state-hooks.js";
 import { SharedDatabaseProtectionError } from "../../src/errors/errors.js";
-import { makeCtx, makeRecipe, runSyncFailure, runSyncSuccess } from "../helpers.js";
+import { makeFakeStateStore } from "../../src/testing/fake-adapters.js";
+import { makeCtx, makeRecipe, runSyncFailure, runSyncSuccess, runWith } from "../helpers.js";
 
 const recipe = makeRecipe({
   project: { id: "kl", dbPrefix: "kl", sharedDatabase: "kl_e2e_demo", sharedBranches: ["main"] },
@@ -72,5 +74,33 @@ describe("down guard", () => {
   it("buildDownArgs maps --volumes", () => {
     expect(buildDownArgs({ volumes: false })).toEqual(["down"]);
     expect(buildDownArgs({ volumes: true })).toEqual(["down", "--volumes"]);
+  });
+});
+
+describe("finalizeDownState", () => {
+  const seed = () => {
+    const store = makeFakeStateStore();
+    store.rows.set(onFeature.composeProjectName, {
+      ...rowFromContext(recipe, onFeature),
+      createdAt: "2026-06-01T00:00:00.000Z",
+      lastUsedAt: "2026-06-01T00:00:00.000Z",
+      templateDb: null,
+      templateKey: null,
+    });
+    return store;
+  };
+
+  it("plain down only touches the row", async () => {
+    const store = seed();
+    await runWith(store.layer)(finalizeDownState(onFeature, { volumes: false }));
+    const row = store.rows.get(onFeature.composeProjectName);
+    expect(row).toBeDefined();
+    expect(row!.lastUsedAt).not.toBe("2026-06-01T00:00:00.000Z");
+  });
+
+  it("down --volumes removes the row", async () => {
+    const store = seed();
+    await runWith(store.layer)(finalizeDownState(onFeature, { volumes: true }));
+    expect(store.rows.has(onFeature.composeProjectName)).toBe(false);
   });
 });

@@ -152,6 +152,61 @@ describe("DockerComposeLive", () => {
     ]);
   });
 
+  it("listProjects parses `docker compose ls -a --format json` leniently", async () => {
+    const { recording, run } = makeEnv((spec) =>
+      spec.args.includes("ls")
+        ? {
+            exitCode: 0,
+            stdout: JSON.stringify([
+              { Name: "kl_a", Status: "running(2)", ConfigFiles: "/a/compose.yml" },
+              { Name: "kl_b", Status: "exited(2)", ConfigFiles: "/b/compose.yml" },
+              { Status: "running(1)" },
+            ]),
+            stderr: "",
+          }
+        : undefined,
+    );
+    const projects = await run(
+      Effect.gen(function* () {
+        const dc = yield* DockerCompose;
+        return yield* dc.listProjects();
+      }),
+    );
+    expect(projects).toEqual([
+      { name: "kl_a", running: true },
+      { name: "kl_b", running: false },
+    ]);
+    expect(recording.calls.at(-1)).toMatchObject({
+      command: "docker",
+      args: ["compose", "ls", "-a", "--format", "json"],
+    });
+  });
+
+  it("listProjects tolerates empty output and fails typed on garbage", async () => {
+    const { run } = makeEnv((spec) =>
+      spec.args.includes("ls") ? { exitCode: 0, stdout: "  \n", stderr: "" } : undefined,
+    );
+    await expect(
+      run(
+        Effect.gen(function* () {
+          const dc = yield* DockerCompose;
+          return yield* dc.listProjects();
+        }),
+      ),
+    ).resolves.toEqual([]);
+
+    const garbage = makeEnv((spec) =>
+      spec.args.includes("ls") ? { exitCode: 0, stdout: "not json", stderr: "" } : undefined,
+    );
+    const error = await garbage.run(
+      Effect.gen(function* () {
+        const dc = yield* DockerCompose;
+        return yield* Effect.flip(dc.listProjects());
+      }),
+    );
+    expect(error).toBeInstanceOf(ComposeCommandError);
+  });
+
   it("waitForDb polls pg_isready until success", async () => {
     let attempts = 0;
     const { ctx, recipe, run } = makeEnv((spec) => {

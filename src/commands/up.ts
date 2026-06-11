@@ -8,6 +8,7 @@ import type { CompanionSpec } from "../platform/process-supervisor.js";
 import { ProcessSupervisor } from "../platform/process-supervisor.js";
 import { DockerCompose } from "../platform/docker-compose.js";
 import { resolveContext } from "./resolve-context.js";
+import { ensurePortAvailable, recordEnvironment, warnOrAutoClean } from "./state-hooks.js";
 import { buildInfoText } from "./info.js";
 
 type UpFlags = { odooOnly: boolean; noBuild: boolean; detach: boolean; logs: boolean };
@@ -58,10 +59,13 @@ export const upCommand = Command.make(
       const { ctx, recipe } = yield* resolveContext(flags.config);
       const compose = yield* DockerCompose;
       yield* compose.ensureAvailable();
+      yield* ensurePortAvailable(ctx);
+      yield* recordEnvironment(recipe, ctx);
       const ref = yield* compose.prepareComposeFile(recipe, ctx);
       const plan = buildUpPlan(recipe, ctx, flags);
       yield* compose.stream(ref, plan.upArgs);
       yield* Console.log(buildInfoText(ctx));
+      yield* warnOrAutoClean(recipe, ctx);
       if (plan.companions.length > 0 && !flags.detach) {
         const supervisor = yield* ProcessSupervisor;
         yield* supervisor.runAll(plan.companions);

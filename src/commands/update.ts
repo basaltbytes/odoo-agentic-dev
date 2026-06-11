@@ -3,6 +3,7 @@ import { Argument, Command, Flag } from "effect/unstable/cli";
 import { ConfigValidationError } from "../errors/errors.js";
 import { OdooLifecycle } from "../platform/odoo-lifecycle.js";
 import { resolveContext } from "./resolve-context.js";
+import { recordEnvironment } from "./state-hooks.js";
 
 export const updateCommand = Command.make(
   "update",
@@ -25,6 +26,7 @@ export const updateCommand = Command.make(
         );
       }
       const { ctx, recipe } = yield* resolveContext(flags.config);
+      yield* recordEnvironment(recipe, ctx);
       const lifecycle = yield* OdooLifecycle;
       yield* Console.log(`Updating modules [${list.join(", ")}] in ${ctx.databaseName}`);
       yield* lifecycle.updateModules(recipe, ctx, list, { restart: !flags.noRestart });

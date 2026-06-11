@@ -29,8 +29,15 @@ export const composeArgs = (ref: ComposeRef, rest: ReadonlyArray<string>): Array
   ...rest,
 ];
 
+export type ComposeProject = {
+  readonly name: string;
+  readonly running: boolean;
+};
+
 export interface DockerComposeApi {
   readonly ensureAvailable: () => Effect.Effect<void, DockerUnavailableError>;
+  /** All compose projects on this docker host (`docker compose ls -a`). */
+  readonly listProjects: () => Effect.Effect<ReadonlyArray<ComposeProject>, ComposeCommandError>;
   /** Write the generated compose file (or resolve the project-supplied one). */
   readonly prepareComposeFile: (
     recipe: OdooAgenticDevConfig,
@@ -60,6 +67,29 @@ export interface DockerComposeApi {
 }
 
 export const DockerCompose = Context.Service<DockerComposeApi>("odoo-agentic-dev/DockerCompose");
+
+/**
+ * Lenient parse of `docker compose ls -a --format json`: an array of
+ * `{ Name, Status, ConfigFiles }` where Status reads like "running(2)" or
+ * "exited(2)". Anything unrecognized is skipped rather than fatal.
+ */
+export const parseComposeLs = (stdout: string): Array<ComposeProject> => {
+  const text = stdout.trim();
+  if (text.length === 0) return [];
+  const parsed: unknown = JSON.parse(text);
+  if (!Array.isArray(parsed)) return [];
+  const projects: Array<ComposeProject> = [];
+  for (const item of parsed) {
+    if (typeof item !== "object" || item === null) continue;
+    const record = item as Record<string, unknown>;
+    if (typeof record["Name"] !== "string" || record["Name"].length === 0) continue;
+    projects.push({
+      name: record["Name"],
+      running: String(record["Status"] ?? "").startsWith("running"),
+    });
+  }
+  return projects;
+};
 
 export const DockerComposeLive = Layer.effect(
   DockerCompose,
@@ -128,6 +158,32 @@ export const DockerComposeLive = Layer.effect(
       return exec(ref, argv, stdin).pipe(Effect.flatMap(failOnNonZero(ref, argv)));
     };
 
+    const listProjects = (): Effect.Effect<ReadonlyArray<ComposeProject>, ComposeCommandError> => {
+      const argv = ["compose", "ls", "-a", "--format", "json"];
+      return runner.run({ command: "docker", args: argv }).pipe(
+        Effect.mapError(toComposeError(argv)),
+        Effect.flatMap((result) =>
+          result.exitCode !== 0
+            ? Effect.fail(
+                new ComposeCommandError({
+                  args: argv,
+                  exitCode: result.exitCode,
+                  stderrTail: tail(result.stderr || result.stdout),
+                }),
+              )
+            : Effect.try({
+                try: () => parseComposeLs(result.stdout),
+                catch: (cause) =>
+                  new ComposeCommandError({
+                    args: argv,
+                    exitCode: 0,
+                    stderrTail: `unparseable compose ls output: ${String(cause)}`,
+                  }),
+              }),
+        ),
+      );
+    };
+
     return {
       ensureAvailable: () =>
         runner.run({ command: "docker", args: ["version", "--format", "json"] }).pipe(
@@ -177,6 +233,7 @@ export const DockerComposeLive = Layer.effect(
           };
         }),
 
+      listProjects,
       run,
       tryRun,
 

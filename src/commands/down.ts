@@ -4,8 +4,10 @@ import type { OdooAgenticDevConfig } from "../core/project-recipe.js";
 import type { WorktreeContext } from "../core/worktree-context.js";
 import { assertSharedDatabaseAllowed } from "../core/safety.js";
 import { DockerCompose } from "../platform/docker-compose.js";
+import { StateStore } from "../platform/state-store.js";
+import type { StateStoreApi } from "../platform/state-store.js";
 import { resolveContext } from "./resolve-context.js";
-import type { SharedDatabaseProtectionError } from "../errors/errors.js";
+import type { SharedDatabaseProtectionError, StateError } from "../errors/errors.js";
 
 export const guardDown = (
   recipe: OdooAgenticDevConfig,
@@ -25,6 +27,18 @@ export const buildDownArgs = (flags: { volumes: boolean }): Array<string> => [
   "down",
   ...(flags.volumes ? ["--volumes"] : []),
 ];
+
+/** After a successful teardown: `--volumes` forgets the environment, plain down only touches it. */
+export const finalizeDownState = (
+  ctx: WorktreeContext,
+  flags: { volumes: boolean },
+): Effect.Effect<void, StateError, StateStoreApi> =>
+  Effect.gen(function* () {
+    const store = yield* StateStore;
+    yield* flags.volumes
+      ? store.remove(ctx.composeProjectName)
+      : store.touch(ctx.composeProjectName);
+  });
 
 export const downCommand = Command.make(
   "down",
@@ -46,5 +60,6 @@ export const downCommand = Command.make(
         `Stopping compose project: ${ctx.composeProjectName} (database: ${ctx.databaseName})`,
       );
       yield* compose.stream(ref, buildDownArgs(flags));
+      yield* finalizeDownState(ctx, flags);
     }),
 );
