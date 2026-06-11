@@ -4,17 +4,29 @@ import { Command } from "effect/unstable/cli"
 import { NodeRuntime, NodeServices } from "@effect/platform-node"
 import { infoCommand } from "./commands/info.js"
 import { setupCommand } from "./commands/setup.js"
+import { upCommand } from "./commands/up.js"
 import { downCommand } from "./commands/down.js"
 import { resetDbCommand } from "./commands/reset-db.js"
+import { updateCommand } from "./commands/update.js"
+import { testCommand } from "./commands/test.js"
 import { CommandRunnerLive } from "./platform/command-runner.js"
 import { GitLive } from "./platform/git.js"
 import { DockerComposeLive } from "./platform/docker-compose.js"
 import { OdooLifecycleLive } from "./platform/odoo-lifecycle.js"
+import { ProcessSupervisorLive } from "./platform/process-supervisor.js"
 import { isRuntimeError, renderError } from "./errors/errors.js"
 
 const root = Command.make("odoo-agentic-dev").pipe(
   Command.withDescription("Agent-friendly local Odoo development runtime"),
-  Command.withSubcommands([infoCommand, setupCommand, downCommand, resetDbCommand])
+  Command.withSubcommands([
+    infoCommand,
+    setupCommand,
+    upCommand,
+    downCommand,
+    resetDbCommand,
+    updateCommand,
+    testCommand
+  ])
 )
 
 const services = Layer.mergeAll(
@@ -24,6 +36,7 @@ const services = Layer.mergeAll(
     Layer.provide(DockerComposeLive.pipe(Layer.provide(CommandRunnerLive))),
     Layer.provide(CommandRunnerLive)
   ),
+  ProcessSupervisorLive.pipe(Layer.provide(CommandRunnerLive)),
   CommandRunnerLive
 ).pipe(Layer.provideMerge(NodeServices.layer))
 
