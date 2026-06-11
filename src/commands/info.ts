@@ -31,7 +31,7 @@ export const buildInfoJson = (ctx: WorktreeContext): string =>
     2,
   );
 
-export const buildInfoEnv = (ctx: WorktreeContext): string =>
+const buildInfoEnv = (ctx: WorktreeContext): string =>
   Object.entries(ctx.env)
     .map(([key, value]) => `${key}=${value}`)
     .join("\n");

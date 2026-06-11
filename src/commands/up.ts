@@ -10,9 +10,9 @@ import { DockerCompose } from "../platform/docker-compose.js";
 import { resolveContext } from "./resolve-context.js";
 import { buildInfoText } from "./info.js";
 
-export type UpFlags = { odooOnly: boolean; noBuild: boolean; detach: boolean; logs: boolean };
+type UpFlags = { odooOnly: boolean; noBuild: boolean; detach: boolean; logs: boolean };
 
-export const buildCompanionSpecs = (
+const buildCompanionSpecs = (
   recipe: OdooAgenticDevConfig,
   ctx: WorktreeContext,
 ): Array<CompanionSpec> =>

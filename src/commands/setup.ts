@@ -5,13 +5,12 @@ import type { OdooAgenticDevConfig } from "../core/project-recipe.js";
 import type { WorktreeContext } from "../core/worktree-context.js";
 import { DockerCompose } from "../platform/docker-compose.js";
 import { OdooLifecycle } from "../platform/odoo-lifecycle.js";
-import { CommandRunner } from "../platform/command-runner.js";
+import { CommandRunner, runInheritedOrFail } from "../platform/command-runner.js";
 import { resolveContext } from "./resolve-context.js";
 import { guardReset } from "./reset-db.js";
 import { buildInfoText } from "./info.js";
-import { CommandFailedError } from "../errors/errors.js";
 
-export type SetupStep =
+type SetupStep =
   | { readonly kind: "submodules" }
   | {
       readonly kind: "install";
@@ -56,28 +55,25 @@ export const setupCommand = Command.make(
       const lifecycle = yield* OdooLifecycle;
       yield* compose.ensureAvailable();
 
-      const runHost = (command: string, args: ReadonlyArray<string>, cwd: string) =>
-        runner
-          .runInherited({ command, args, cwd, env: ctx.env })
-          .pipe(
-            Effect.flatMap((code) =>
-              code === 0
-                ? Effect.void
-                : Effect.fail(
-                    new CommandFailedError({ command, args, cwd, exitCode: code, stderrTail: "" }),
-                  ),
-            ),
-          );
-
       for (const step of buildSetupSteps(recipe, ctx, flags)) {
         switch (step.kind) {
           case "submodules":
             yield* Console.log("» git submodule update --init --recursive");
-            yield* runHost("git", ["submodule", "update", "--init", "--recursive"], ctx.rootDir);
+            yield* runInheritedOrFail(runner, {
+              command: "git",
+              args: ["submodule", "update", "--init", "--recursive"],
+              cwd: ctx.rootDir,
+              env: ctx.env,
+            });
             break;
           case "install":
             yield* Console.log(`» ${step.command} ${step.args.join(" ")} (${step.cwd})`);
-            yield* runHost(step.command, step.args, step.cwd);
+            yield* runInheritedOrFail(runner, {
+              command: step.command,
+              args: step.args,
+              cwd: step.cwd,
+              env: ctx.env,
+            });
             break;
           case "build": {
             const ref = yield* compose.prepareComposeFile(recipe, ctx);

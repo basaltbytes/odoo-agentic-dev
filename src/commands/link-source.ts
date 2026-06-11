@@ -1,4 +1,5 @@
 import { existsSync, lstatSync, symlinkSync, unlinkSync } from "node:fs";
+import type { Stats } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
 import { Console, Effect, Option } from "effect";
 import { Command, Flag } from "effect/unstable/cli";
@@ -25,11 +26,11 @@ export const performLinkSource = (options: {
         ? isAbsolute(configured)
           ? configured
           : resolve(options.rootDir, configured)
-        : (yield* Effect.sync(() => existsSync(sibling)))
+        : existsSync(sibling)
           ? sibling
           : undefined;
 
-    if (resolved === undefined || !(yield* Effect.sync(() => existsSync(resolved)))) {
+    if (resolved === undefined || !existsSync(resolved)) {
       return yield* Effect.fail(
         new SourceResolverError({
           reason:
@@ -41,13 +42,12 @@ export const performLinkSource = (options: {
     }
 
     const linkPath = join(options.rootDir, options.name);
-    const existing = yield* Effect.sync(() => {
-      try {
-        return lstatSync(linkPath);
-      } catch {
-        return undefined;
-      }
-    });
+    let existing: Stats | undefined;
+    try {
+      existing = lstatSync(linkPath);
+    } catch {
+      existing = undefined;
+    }
     if (existing !== undefined) {
       if (!existing.isSymbolicLink()) {
         return yield* Effect.fail(

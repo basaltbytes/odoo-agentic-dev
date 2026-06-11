@@ -31,16 +31,11 @@ const root = Command.make("odoo-agentic-dev").pipe(
   ]),
 );
 
-const services = Layer.mergeAll(
-  GitLive.pipe(Layer.provide(CommandRunnerLive)),
-  DockerComposeLive.pipe(Layer.provide(CommandRunnerLive)),
-  OdooLifecycleLive.pipe(
-    Layer.provide(DockerComposeLive.pipe(Layer.provide(CommandRunnerLive))),
-    Layer.provide(CommandRunnerLive),
-  ),
-  ProcessSupervisorLive.pipe(Layer.provide(CommandRunnerLive)),
-  CommandRunnerLive,
-).pipe(Layer.provideMerge(NodeServices.layer));
+const services = Layer.mergeAll(GitLive, OdooLifecycleLive, ProcessSupervisorLive).pipe(
+  Layer.provideMerge(DockerComposeLive),
+  Layer.provideMerge(CommandRunnerLive),
+  Layer.provideMerge(NodeServices.layer),
+);
 
 const program = Command.run(root, { version: "0.1.0" }).pipe(
   Effect.catch((error) =>
@@ -52,9 +47,7 @@ const program = Command.run(root, { version: "0.1.0" }).pipe(
       if (!helpRequested) {
         yield* Console.error(isRuntimeError(error) ? renderError(error) : String(error));
       }
-      yield* Effect.sync(() => {
-        process.exitCode = 1;
-      });
+      process.exitCode = 1;
     }),
   ),
   Effect.provide(services),

@@ -28,6 +28,27 @@ export interface CommandRunnerApi {
 
 export const CommandRunner = Context.Service<CommandRunnerApi>("odoo-agentic-dev/CommandRunner");
 
+/** runInherited, but a non-zero exit becomes a typed CommandFailedError. */
+export const runInheritedOrFail = (
+  runner: CommandRunnerApi,
+  spec: ExecSpec,
+): Effect.Effect<void, CommandFailedError> =>
+  runner.runInherited(spec).pipe(
+    Effect.flatMap((exitCode) =>
+      exitCode === 0
+        ? Effect.void
+        : Effect.fail(
+            new CommandFailedError({
+              command: spec.command,
+              args: spec.args,
+              cwd: spec.cwd,
+              exitCode,
+              stderrTail: "",
+            }),
+          ),
+    ),
+  );
+
 const collectText = (stream: Stream.Stream<Uint8Array, unknown>) =>
   stream.pipe(Stream.decodeText(), Stream.mkString);
 

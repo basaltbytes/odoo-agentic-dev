@@ -1,31 +1,27 @@
 import { describe, expect, it } from "vitest";
-import { Effect } from "effect";
 import { buildWorktreeContext, substituteEnvTokens } from "../../src/core/worktree-context.js";
 import type { GitState } from "../../src/core/worktree-context.js";
-import { normalizeConfig, validateConfigInput } from "../../src/config/schema.js";
 import { ConfigValidationError } from "../../src/errors/errors.js";
 import { fnv1a32 } from "../../src/core/port-allocator.js";
-import { runSyncFailure, runSyncSuccess } from "../helpers.js";
+import { makeRecipe, runSyncFailure, runSyncSuccess } from "../helpers.js";
 
-const recipe = runSyncSuccess(
-  validateConfigInput({
-    project: {
-      id: "kriss-laure",
-      dbPrefix: "kl",
-      sharedDatabase: "kl_e2e_demo",
-      sharedBranches: ["main", "master", "dev", "develop", "development"],
-    },
-    ports: { odooBase: 18069, companionBase: 28028, range: 1000 },
-    odoo: {
-      version: "18.0",
-      addons: [{ host: "backend/addons/Custom", container: "/mnt/extra-addons/Custom" }],
-    },
-    envAliases: { KL_WORKTREE_DB_NAME: "ODOO_DATABASE", E2E_BASE_URL: "ODOO_BASE_URL" },
-    companionApps: [
-      { name: "pwa", cwd: "frontend", command: "pnpm", args: ["dev"], portEnv: "PWA_PORT" },
-    ],
-  }).pipe(Effect.flatMap(normalizeConfig)),
-);
+const recipe = makeRecipe({
+  project: {
+    id: "kriss-laure",
+    dbPrefix: "kl",
+    sharedDatabase: "kl_e2e_demo",
+    sharedBranches: ["main", "master", "dev", "develop", "development"],
+  },
+  ports: { odooBase: 18069, companionBase: 28028, range: 1000 },
+  odoo: {
+    version: "18.0",
+    addons: [{ host: "backend/addons/Custom", container: "/mnt/extra-addons/Custom" }],
+  },
+  envAliases: { KL_WORKTREE_DB_NAME: "ODOO_DATABASE", E2E_BASE_URL: "ODOO_BASE_URL" },
+  companionApps: [
+    { name: "pwa", cwd: "frontend", command: "pnpm", args: ["dev"], portEnv: "PWA_PORT" },
+  ],
+});
 
 const onBranch = (branch: string): GitState => ({ _tag: "Branch", branch });
 

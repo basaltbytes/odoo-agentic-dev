@@ -1,44 +1,25 @@
 import { describe, expect, it } from "vitest";
-import { Effect } from "effect";
 import { buildUpPlan } from "../../src/commands/up.js";
 import { buildDownArgs, guardDown } from "../../src/commands/down.js";
 import { SharedDatabaseProtectionError } from "../../src/errors/errors.js";
-import { normalizeConfig, validateConfigInput } from "../../src/config/schema.js";
-import { buildWorktreeContext } from "../../src/core/worktree-context.js";
-import { runSyncFailure, runSyncSuccess } from "../helpers.js";
+import { makeCtx, makeRecipe, runSyncFailure, runSyncSuccess } from "../helpers.js";
 
-const recipe = runSyncSuccess(
-  validateConfigInput({
-    project: { id: "kl", dbPrefix: "kl", sharedDatabase: "kl_e2e_demo", sharedBranches: ["main"] },
-    odoo: { version: "18.0", addons: [{ host: "addons", container: "/mnt/c" }] },
-    companionApps: [
-      {
-        name: "pwa",
-        cwd: "frontend",
-        command: "pnpm",
-        args: ["dev"],
-        portEnv: "PWA_PORT",
-        env: { VITE_DB: "$ODOO_DATABASE" },
-      },
-    ],
-  }).pipe(Effect.flatMap(normalizeConfig)),
-);
-const onMain = runSyncSuccess(
-  buildWorktreeContext({
-    rootDir: "/w",
-    recipe,
-    env: {},
-    git: { _tag: "Branch", branch: "main" },
-  }),
-);
-const onFeature = runSyncSuccess(
-  buildWorktreeContext({
-    rootDir: "/w",
-    recipe,
-    env: {},
-    git: { _tag: "Branch", branch: "feature/z" },
-  }),
-);
+const recipe = makeRecipe({
+  project: { id: "kl", dbPrefix: "kl", sharedDatabase: "kl_e2e_demo", sharedBranches: ["main"] },
+  odoo: { version: "18.0", addons: [{ host: "addons", container: "/mnt/c" }] },
+  companionApps: [
+    {
+      name: "pwa",
+      cwd: "frontend",
+      command: "pnpm",
+      args: ["dev"],
+      portEnv: "PWA_PORT",
+      env: { VITE_DB: "$ODOO_DATABASE" },
+    },
+  ],
+});
+const onMain = makeCtx(recipe, "main");
+const onFeature = makeCtx(recipe, "feature/z");
 
 describe("buildUpPlan", () => {
   it("builds compose args and companion specs with injected env", () => {

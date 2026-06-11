@@ -1,17 +1,12 @@
 // test/platform/command-runner.test.ts
 import { describe, expect, it } from "vitest";
-import { Effect } from "effect";
+import { Effect, Layer } from "effect";
 import { NodeServices } from "@effect/platform-node";
 import { CommandRunner, CommandRunnerLive } from "../../src/platform/command-runner.js";
 import { makeRecordingRunner } from "../../src/testing/fake-adapters.js";
+import { runWith } from "../helpers.js";
 
-const runLive = <A, E>(effect: Effect.Effect<A, E, any>) =>
-  Effect.runPromise(
-    effect.pipe(
-      Effect.provide(CommandRunnerLive),
-      Effect.provide(NodeServices.layer),
-    ) as Effect.Effect<A, E>,
-  );
+const runLive = runWith(Layer.provide(CommandRunnerLive, NodeServices.layer));
 
 describe("CommandRunnerLive", () => {
   it("captures stdout, stderr and exit code", async () => {

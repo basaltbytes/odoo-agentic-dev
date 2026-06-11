@@ -1,34 +1,22 @@
 import { describe, expect, it } from "vitest";
-import { Effect } from "effect";
 import { parse } from "yaml";
 import { buildComposeModel, renderComposeYaml } from "../../src/core/compose-model.js";
-import { buildWorktreeContext } from "../../src/core/worktree-context.js";
-import { normalizeConfig, validateConfigInput } from "../../src/config/schema.js";
-import { runSyncSuccess } from "../helpers.js";
+import { makeCtx, makeRecipe } from "../helpers.js";
 
-const recipe = runSyncSuccess(
-  validateConfigInput({
-    project: { id: "kriss-laure", dbPrefix: "kl" },
-    odoo: {
-      version: "18.0-20250606",
-      configFile: "config/odoo.worktree.conf",
-      dockerfile: "Dockerfile.odoo",
-      imageName: "krisslaure-odoo-agentic-dev",
-      addons: [
-        { host: "backend/addons/Custom", container: "/mnt/extra-addons/Custom" },
-        { host: "backend/addons/OCA", container: "/mnt/extra-addons/OCA" },
-      ],
-    },
-  }).pipe(Effect.flatMap(normalizeConfig)),
-);
-const ctx = runSyncSuccess(
-  buildWorktreeContext({
-    rootDir: "/work/kl",
-    recipe,
-    env: {},
-    git: { _tag: "Branch", branch: "feature/x" },
-  }),
-);
+const recipe = makeRecipe({
+  project: { id: "kriss-laure", dbPrefix: "kl" },
+  odoo: {
+    version: "18.0-20250606",
+    configFile: "config/odoo.worktree.conf",
+    dockerfile: "Dockerfile.odoo",
+    imageName: "krisslaure-odoo-agentic-dev",
+    addons: [
+      { host: "backend/addons/Custom", container: "/mnt/extra-addons/Custom" },
+      { host: "backend/addons/OCA", container: "/mnt/extra-addons/OCA" },
+    ],
+  },
+});
+const ctx = makeCtx(recipe, "feature/x", "/work/kl");
 const model = buildComposeModel(recipe, ctx);
 
 describe("buildComposeModel", () => {
@@ -43,20 +31,11 @@ describe("buildComposeModel", () => {
   });
 
   it("falls back to the official image without a dockerfile", () => {
-    const plain = runSyncSuccess(
-      validateConfigInput({
-        project: { id: "x", dbPrefix: "x" },
-        odoo: { version: "18.0", addons: [{ host: "addons", container: "/mnt/c" }] },
-      }).pipe(Effect.flatMap(normalizeConfig)),
-    );
-    const plainCtx = runSyncSuccess(
-      buildWorktreeContext({
-        rootDir: "/w",
-        recipe: plain,
-        env: {},
-        git: { _tag: "Branch", branch: "b" },
-      }),
-    );
+    const plain = makeRecipe({
+      project: { id: "x", dbPrefix: "x" },
+      odoo: { version: "18.0", addons: [{ host: "addons", container: "/mnt/c" }] },
+    });
+    const plainCtx = makeCtx(plain, "b");
     const m = buildComposeModel(plain, plainCtx);
     expect((m.services["odoo"] as Record<string, unknown>)["image"]).toBe("odoo:18.0");
   });

@@ -78,12 +78,12 @@ export const testCommand = Command.make(
         profile: Option.getOrUndefined(flags.profile),
       });
       const lifecycle = yield* OdooLifecycle;
-      const code = yield* lifecycle.runTests(recipe, ctx, options);
-      if (code !== 0) {
-        yield* Console.error(`Tests failed (odoo exit ${code})`);
-        yield* Effect.sync(() => {
-          process.exitCode = code;
-        });
+      const { exitCode, stderrTail, stdoutTail } = yield* lifecycle.runTests(recipe, ctx, options);
+      if (stdoutTail.length > 0) process.stdout.write(stdoutTail + "\n");
+      if (stderrTail.length > 0) process.stderr.write(stderrTail + "\n");
+      if (exitCode !== 0) {
+        yield* Console.error(`Tests failed (odoo exit ${exitCode})`);
+        process.exitCode = exitCode;
       } else {
         yield* Console.log("Tests passed");
       }

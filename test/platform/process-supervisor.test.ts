@@ -3,18 +3,17 @@ import { Effect, Layer } from "effect";
 import { ProcessSupervisor, ProcessSupervisorLive } from "../../src/platform/process-supervisor.js";
 import { makeRecordingRunner } from "../../src/testing/fake-adapters.js";
 import { CompanionProcessError } from "../../src/errors/errors.js";
-import type { CommandRunnerApi } from "../../src/platform/command-runner.js";
+import { runWith } from "../helpers.js";
 
-const run = <A, E>(layer: Layer.Layer<CommandRunnerApi>, effect: Effect.Effect<A, E, any>) =>
-  Effect.runPromise(
-    effect.pipe(Effect.provide(Layer.provide(ProcessSupervisorLive, layer))) as Effect.Effect<A, E>,
-  );
+const makeEnv = (script?: Parameters<typeof makeRecordingRunner>[0]) => {
+  const recording = makeRecordingRunner(script);
+  return { recording, run: runWith(Layer.provide(ProcessSupervisorLive, recording.layer)) };
+};
 
 describe("ProcessSupervisorLive", () => {
   it("runs every companion with prefix and env", async () => {
-    const recording = makeRecordingRunner();
+    const { recording, run } = makeEnv();
     await run(
-      recording.layer,
       Effect.gen(function* () {
         const supervisor = yield* ProcessSupervisor;
         yield* supervisor.runAll([
@@ -38,12 +37,11 @@ describe("ProcessSupervisorLive", () => {
   });
 
   it("fails with CompanionProcessError naming the failing app", async () => {
-    const recording = makeRecordingRunner((spec) =>
+    const { run } = makeEnv((spec) =>
       spec.command === "node" ? { exitCode: 5, stdout: "", stderr: "" } : undefined,
     );
     await expect(
       run(
-        recording.layer,
         Effect.gen(function* () {
           const supervisor = yield* ProcessSupervisor;
           yield* supervisor.runAll([
@@ -55,9 +53,8 @@ describe("ProcessSupervisorLive", () => {
   });
 
   it("no companions is a no-op", async () => {
-    const recording = makeRecordingRunner();
+    const { recording, run } = makeEnv();
     await run(
-      recording.layer,
       Effect.gen(function* () {
         const supervisor = yield* ProcessSupervisor;
         yield* supervisor.runAll([]);

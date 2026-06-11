@@ -94,7 +94,7 @@ These rules are the heart of the tool; they are specified here so tests can be w
 
 ## Config
 
-**Public API** (from package root, per PRD): `defineOdooAgenticDevConfig`, `OdooAgenticDevConfigInput`, `OdooAgenticDevConfig`, `OdooProjectConfig`, `OdooRuntimeConfig`, `OdooDatabaseConfig`, `OdooAddonMount`, `CompanionAppConfig`, `PostInitHook`. `defineOdooAgenticDevConfig` is an identity function that preserves literal types; validation happens in the loader.
+**Public API** (from package root, per PRD): `defineConfig` (renamed from `defineOdooAgenticDevConfig` on 2026-06-11), `OdooAgenticDevConfigInput`, `OdooAgenticDevConfig`, `OdooProjectConfig`, `OdooRuntimeConfig`, `OdooDatabaseConfig`, `OdooAddonMount`, `CompanionAppConfig`, `PostInitHook`. `defineConfig` is an identity function that preserves literal types; validation happens in the loader.
 
 **Schema/normalization** (Effect Schema): required `project.id`, `project.dbPrefix`, `odoo.version`, `odoo.addons` (non-empty). Defaults: `ports` as above; `odoo.serviceName` "odoo", `odoo.databaseServiceName` "db"; `odoo.postgresImage` "postgres:16"; `database.withoutDemo` "all"; `sharedBranches` `["main", "master"]` when `sharedDatabase` is set. New optional fields beyond the PRD examples: `compose.file` (escape hatch), `envAliases`, `test.profiles` (name → array of CLI-equivalent test options), `odoo.source` (resolver: absolute/relative path, `"sibling"`, or `"docker-only"`).
 

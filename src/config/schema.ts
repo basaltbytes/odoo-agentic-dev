@@ -98,6 +98,8 @@ export const validateConfigInput = (
 ): Effect.Effect<OdooAgenticDevConfigInput, ConfigValidationError> =>
   Schema.decodeUnknownEffect(ConfigInputSchema)(input).pipe(
     Effect.mapError((error) => new ConfigValidationError({ issues: [error.message] })),
+    // exactOptionalPropertyTypes: the decoded optional props are `?: T | undefined`
+    // while the public input type declares `?: T`, so the cast must stay.
     Effect.map((decoded) => decoded as OdooAgenticDevConfigInput),
   );
 

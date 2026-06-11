@@ -1,17 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { Effect } from "effect";
 import { resolveTestOptions } from "../../src/commands/test.js";
 import { ConfigValidationError } from "../../src/errors/errors.js";
-import { normalizeConfig, validateConfigInput } from "../../src/config/schema.js";
-import { runSyncFailure, runSyncSuccess } from "../helpers.js";
+import { makeRecipe, runSyncFailure, runSyncSuccess } from "../helpers.js";
 
-const recipe = runSyncSuccess(
-  validateConfigInput({
-    project: { id: "kl", dbPrefix: "kl" },
-    odoo: { version: "18.0", addons: [{ host: "addons", container: "/mnt/c" }] },
-    test: { profiles: { payment: ["--test-tags", "payment_flow"] } },
-  }).pipe(Effect.flatMap(normalizeConfig)),
-);
+const recipe = makeRecipe({
+  project: { id: "kl", dbPrefix: "kl" },
+  odoo: { version: "18.0", addons: [{ host: "addons", container: "/mnt/c" }] },
+  test: { profiles: { payment: ["--test-tags", "payment_flow"] } },
+});
 
 describe("resolveTestOptions", () => {
   it("maps flags directly", () => {

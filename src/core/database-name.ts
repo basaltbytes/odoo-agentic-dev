@@ -3,7 +3,7 @@ import { Effect } from "effect";
 import { UnsafeDatabaseNameError } from "../errors/errors.js";
 
 export const DB_NAME_PATTERN = /^[a-z][a-z0-9_]*$/;
-export const MAX_DB_NAME_LENGTH = 63;
+const MAX_DB_NAME_LENGTH = 63;
 
 /** Leading branch path segments dropped before deriving a name. */
 const TYPE_SEGMENTS = new Set([
@@ -29,9 +29,7 @@ const sha8 = (input: string): string =>
 const truncate = (name: string): string =>
   name.length <= MAX_DB_NAME_LENGTH ? name : `${name.slice(0, 54)}_${sha8(name)}`;
 
-export const assertSafeDatabaseName = (
-  name: string,
-): Effect.Effect<string, UnsafeDatabaseNameError> =>
+const assertSafeDatabaseName = (name: string): Effect.Effect<string, UnsafeDatabaseNameError> =>
   name.length === 0 || name.length > MAX_DB_NAME_LENGTH || !DB_NAME_PATTERN.test(name)
     ? Effect.fail(new UnsafeDatabaseNameError({ name }))
     : Effect.succeed(name);

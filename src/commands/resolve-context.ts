@@ -17,7 +17,7 @@ export const resolveContext = (
   configFlag: Option.Option<string>,
 ): Effect.Effect<ResolvedContext, RuntimeError, GitApi> =>
   Effect.gen(function* () {
-    const env = process.env as Record<string, string | undefined>;
+    const env = process.env;
     const { recipe, rootDir } = yield* loadRecipe({
       cwd: process.cwd(),
       explicitPath: Option.getOrUndefined(configFlag),

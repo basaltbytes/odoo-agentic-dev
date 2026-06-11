@@ -1,41 +1,22 @@
 import { describe, expect, it } from "vitest";
-import { Effect } from "effect";
 import { guardReset, parseModulesFlag } from "../../src/commands/reset-db.js";
 import { buildSetupSteps } from "../../src/commands/setup.js";
 import { SharedDatabaseProtectionError } from "../../src/errors/errors.js";
-import { normalizeConfig, validateConfigInput } from "../../src/config/schema.js";
-import { buildWorktreeContext } from "../../src/core/worktree-context.js";
-import { runSyncFailure, runSyncSuccess } from "../helpers.js";
+import { makeCtx, makeRecipe, runSyncFailure, runSyncSuccess } from "../helpers.js";
 
-const recipe = runSyncSuccess(
-  validateConfigInput({
-    project: { id: "kl", dbPrefix: "kl", sharedDatabase: "kl_e2e_demo", sharedBranches: ["main"] },
-    odoo: { version: "18.0", addons: [{ host: "addons", container: "/mnt/c" }] },
-    setup: {
-      submodules: true,
-      packageManagers: [
-        { cwd: ".", command: "pnpm", args: ["install"] },
-        { cwd: "frontend", command: "pnpm", args: ["install"] },
-      ],
-    },
-  }).pipe(Effect.flatMap(normalizeConfig)),
-);
-const onMain = runSyncSuccess(
-  buildWorktreeContext({
-    rootDir: "/w",
-    recipe,
-    env: {},
-    git: { _tag: "Branch", branch: "main" },
-  }),
-);
-const onFeature = runSyncSuccess(
-  buildWorktreeContext({
-    rootDir: "/w",
-    recipe,
-    env: {},
-    git: { _tag: "Branch", branch: "feature/q" },
-  }),
-);
+const recipe = makeRecipe({
+  project: { id: "kl", dbPrefix: "kl", sharedDatabase: "kl_e2e_demo", sharedBranches: ["main"] },
+  odoo: { version: "18.0", addons: [{ host: "addons", container: "/mnt/c" }] },
+  setup: {
+    submodules: true,
+    packageManagers: [
+      { cwd: ".", command: "pnpm", args: ["install"] },
+      { cwd: "frontend", command: "pnpm", args: ["install"] },
+    ],
+  },
+});
+const onMain = makeCtx(recipe, "main");
+const onFeature = makeCtx(recipe, "feature/q");
 
 describe("guardReset", () => {
   it("protects the shared database", () => {

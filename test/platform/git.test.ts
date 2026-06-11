@@ -1,18 +1,19 @@
 // test/platform/git.test.ts
 import { describe, expect, it } from "vitest";
-import { Effect } from "effect";
+import { Effect, Layer } from "effect";
 import { Git, GitLive } from "../../src/platform/git.js";
 import { makeRecordingRunner } from "../../src/testing/fake-adapters.js";
+import { runWith } from "../helpers.js";
 
 const state = (script: Parameters<typeof makeRecordingRunner>[0]) => {
   const recording = makeRecordingRunner(script);
   return {
     recording,
-    run: Effect.runPromise(
+    run: runWith(Layer.provide(GitLive, recording.layer))(
       Effect.gen(function* () {
         const git = yield* Git;
         return yield* git.state("/work/repo");
-      }).pipe(Effect.provide(GitLive), Effect.provide(recording.layer)) as Effect.Effect<any, any>,
+      }),
     ),
   };
 };

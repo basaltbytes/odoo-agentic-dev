@@ -1,8 +1,8 @@
 import { readFileSync } from "node:fs";
 import { isAbsolute, resolve } from "node:path";
 import { Context, Effect, Layer } from "effect";
-import { CommandFailedError, ConfigLoadError, OdooCommandError, tail } from "../errors/errors.js";
-import type { RuntimeError } from "../errors/errors.js";
+import { ConfigLoadError, OdooCommandError, tail } from "../errors/errors.js";
+import type { ComposeCommandError, RuntimeError } from "../errors/errors.js";
 import type { OdooAgenticDevConfig } from "../core/project-recipe.js";
 import type { WorktreeContext } from "../core/worktree-context.js";
 import {
@@ -20,7 +20,7 @@ import {
 import type { OdooTestOptions } from "../core/command-plan.js";
 import { DockerCompose } from "./docker-compose.js";
 import type { ComposeRef } from "./docker-compose.js";
-import { CommandRunner } from "./command-runner.js";
+import { CommandRunner, runInheritedOrFail } from "./command-runner.js";
 
 export interface OdooLifecycleApi {
   readonly resetDatabase: (
@@ -41,12 +41,19 @@ export interface OdooLifecycleApi {
     modules: ReadonlyArray<string>,
     options: { readonly restart: boolean },
   ) => Effect.Effect<void, RuntimeError>;
+  /** Runs the test suite; reporting the tails is the caller's concern. */
   readonly runTests: (
     recipe: OdooAgenticDevConfig,
     ctx: WorktreeContext,
     options: OdooTestOptions,
-  ) => Effect.Effect<number, RuntimeError>;
+  ) => Effect.Effect<
+    { readonly exitCode: number; readonly stdoutTail: string; readonly stderrTail: string },
+    RuntimeError
+  >;
 }
+
+const toOdooError = (e: ComposeCommandError): OdooCommandError =>
+  new OdooCommandError({ args: e.args, exitCode: e.exitCode, stderrTail: e.stderrTail });
 
 export const OdooLifecycle = Context.Service<OdooLifecycleApi>("odoo-agentic-dev/OdooLifecycle");
 
@@ -84,16 +91,7 @@ export const OdooLifecycleLive = Layer.effect(
             options.modules ?? recipe.database.initialModules,
             options.withoutDemo ?? recipe.database.withoutDemo,
           );
-          yield* compose.stream(ref, initArgs).pipe(
-            Effect.mapError(
-              (e) =>
-                new OdooCommandError({
-                  args: e.args,
-                  exitCode: e.exitCode,
-                  stderrTail: e.stderrTail,
-                }),
-            ),
-          );
+          yield* compose.stream(ref, initArgs).pipe(Effect.mapError(toOdooError));
         }),
 
       runPostInitHooks: (recipe, ctx) =>
@@ -121,24 +119,13 @@ export const OdooLifecycleLive = Layer.effect(
               case "host-command": {
                 const cwd =
                   expanded.cwd === undefined ? ctx.rootDir : resolve(ctx.rootDir, expanded.cwd);
-                const code = yield* runner.runInherited({
+                yield* runInheritedOrFail(runner, {
                   command: expanded.command,
                   args: expanded.args,
                   cwd,
                   env: ctx.env,
                   prefix: `[hook:${expanded.command}] `,
                 });
-                if (code !== 0) {
-                  yield* Effect.fail(
-                    new CommandFailedError({
-                      command: expanded.command,
-                      args: expanded.args,
-                      cwd,
-                      exitCode: code,
-                      stderrTail: "",
-                    }),
-                  );
-                }
                 break;
               }
             }
@@ -152,16 +139,7 @@ export const OdooLifecycleLive = Layer.effect(
           yield* compose.stream(ref, ["stop", recipe.odoo.serviceName]);
           yield* compose
             .stream(ref, odooUpdateArgs(recipe.odoo.serviceName, ctx.databaseName, modules))
-            .pipe(
-              Effect.mapError(
-                (e) =>
-                  new OdooCommandError({
-                    args: e.args,
-                    exitCode: e.exitCode,
-                    stderrTail: e.stderrTail,
-                  }),
-              ),
-            );
+            .pipe(Effect.mapError(toOdooError));
           if (options.restart) {
             yield* compose.stream(ref, ["up", "-d", recipe.odoo.serviceName]);
           }
@@ -175,17 +153,11 @@ export const OdooLifecycleLive = Layer.effect(
             ref,
             odooTestArgs(recipe.odoo.serviceName, ctx.databaseName, options),
           );
-          if (result.stdout.length > 0) {
-            yield* Effect.sync(() => {
-              process.stdout.write(tail(result.stdout, 200) + "\n");
-            });
-          }
-          if (result.stderr.length > 0) {
-            yield* Effect.sync(() => {
-              process.stderr.write(tail(result.stderr, 200) + "\n");
-            });
-          }
-          return result.exitCode;
+          return {
+            exitCode: result.exitCode,
+            stdoutTail: tail(result.stdout, 200),
+            stderrTail: tail(result.stderr, 200),
+          };
         }),
     };
   }),

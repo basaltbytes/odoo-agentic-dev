@@ -1,35 +1,23 @@
 // test/commands/info.test.ts
 import { describe, expect, it } from "vitest";
-import { Effect } from "effect";
 import { buildInfoJson, buildInfoText } from "../../src/commands/info.js";
-import { buildWorktreeContext } from "../../src/core/worktree-context.js";
-import { normalizeConfig, validateConfigInput } from "../../src/config/schema.js";
-import { runSyncSuccess } from "../helpers.js";
+import { makeCtx, makeRecipe } from "../helpers.js";
 
-const recipe = runSyncSuccess(
-  validateConfigInput({
-    project: {
-      id: "kriss-laure",
-      dbPrefix: "kl",
-      sharedDatabase: "kl_e2e_demo",
-      sharedBranches: ["main"],
-    },
-    ports: { odooBase: 18069, companionBase: 28028, range: 1000 },
-    odoo: { version: "18.0", addons: [{ host: "addons", container: "/mnt/x" }] },
-    companionApps: [
-      { name: "pwa", cwd: "frontend", command: "pnpm", args: ["dev"], portEnv: "PWA_PORT" },
-    ],
-  }).pipe(Effect.flatMap(normalizeConfig)),
-);
+const recipe = makeRecipe({
+  project: {
+    id: "kriss-laure",
+    dbPrefix: "kl",
+    sharedDatabase: "kl_e2e_demo",
+    sharedBranches: ["main"],
+  },
+  ports: { odooBase: 18069, companionBase: 28028, range: 1000 },
+  odoo: { version: "18.0", addons: [{ host: "addons", container: "/mnt/x" }] },
+  companionApps: [
+    { name: "pwa", cwd: "frontend", command: "pnpm", args: ["dev"], portEnv: "PWA_PORT" },
+  ],
+});
 
-const ctx = runSyncSuccess(
-  buildWorktreeContext({
-    rootDir: "/work/kl",
-    recipe,
-    env: {},
-    git: { _tag: "Branch", branch: "feature/KL-123-payment-flow" },
-  }),
-);
+const ctx = makeCtx(recipe, "feature/KL-123-payment-flow", "/work/kl");
 
 describe("info output", () => {
   it("text output contains the PRD-required lines", () => {

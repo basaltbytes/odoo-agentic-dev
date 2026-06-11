@@ -6,9 +6,7 @@ import { Effect, Layer } from "effect";
 import { OdooLifecycle, OdooLifecycleLive } from "../../src/platform/odoo-lifecycle.js";
 import { DockerComposeLive } from "../../src/platform/docker-compose.js";
 import { makeRecordingRunner } from "../../src/testing/fake-adapters.js";
-import { normalizeConfig, validateConfigInput } from "../../src/config/schema.js";
-import { buildWorktreeContext } from "../../src/core/worktree-context.js";
-import { runSyncSuccess } from "../helpers.js";
+import { makeCtx, makeRecipe, runWith } from "../helpers.js";
 
 const tmp: Array<string> = [];
 afterAll(() => {
@@ -18,30 +16,20 @@ afterAll(() => {
 const makeEnv = (extraConfig: Record<string, unknown> = {}) => {
   const rootDir = mkdtempSync(join(tmpdir(), "oad-lc-"));
   tmp.push(rootDir);
-  const recipe = runSyncSuccess(
-    validateConfigInput({
-      project: { id: "kl", dbPrefix: "kl" },
-      odoo: { version: "18.0", addons: [{ host: "addons", container: "/mnt/c" }] },
-      database: { initialModules: ["KL_setup"], withoutDemo: "all" },
-      ...extraConfig,
-    }).pipe(Effect.flatMap(normalizeConfig)),
-  );
-  const ctx = runSyncSuccess(
-    buildWorktreeContext({
-      rootDir,
-      recipe,
-      env: {},
-      git: { _tag: "Branch", branch: "feature/z" },
-    }),
-  );
+  const recipe = makeRecipe({
+    project: { id: "kl", dbPrefix: "kl" },
+    odoo: { version: "18.0", addons: [{ host: "addons", container: "/mnt/c" }] },
+    database: { initialModules: ["KL_setup"], withoutDemo: "all" },
+    ...extraConfig,
+  });
+  const ctx = makeCtx(recipe, "feature/z", rootDir);
   const recording = makeRecordingRunner();
-  const layer = Layer.provide(
-    OdooLifecycleLive,
-    Layer.merge(Layer.provide(DockerComposeLive, recording.layer), recording.layer),
+  const run = runWith(
+    Layer.provide(
+      OdooLifecycleLive,
+      Layer.merge(Layer.provide(DockerComposeLive, recording.layer), recording.layer),
+    ),
   );
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const run = <A, E>(effect: Effect.Effect<A, E, any>) =>
-    Effect.runPromise(effect.pipe(Effect.provide(layer)) as Effect.Effect<A, E>);
   return { ctx, recipe, recording, rootDir, run };
 };
 
@@ -131,14 +119,16 @@ describe("OdooLifecycle.updateModules", () => {
 });
 
 describe("OdooLifecycle.runTests", () => {
-  it("returns the odoo exit code", async () => {
+  it("returns the odoo exit code and output tails without printing", async () => {
     const { ctx, recipe, run } = makeEnv();
-    const code = await run(
+    const result = await run(
       Effect.gen(function* () {
         const lifecycle = yield* OdooLifecycle;
         return yield* lifecycle.runTests(recipe, ctx, { tags: "payment" });
       }),
     );
-    expect(code).toBe(0);
+    expect(result.exitCode).toBe(0);
+    expect(result.stdoutTail).toBe("");
+    expect(result.stderrTail).toBe("");
   });
 });

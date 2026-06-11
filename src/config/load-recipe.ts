@@ -7,7 +7,7 @@ import type { ConfigValidationError } from "../errors/errors.js";
 import type { OdooAgenticDevConfig } from "../core/project-recipe.js";
 import { normalizeConfig, validateConfigInput } from "./schema.js";
 
-export const CONFIG_FILENAMES = [
+const CONFIG_FILENAMES = [
   "odoo-agentic-dev.config.ts",
   "odoo-agentic-dev.config.mts",
   "odoo-agentic-dev.config.js",
