@@ -4130,4 +4130,7 @@ git add -A && git commit -m "feat: e2e test, README, CI workflow, and docker int
 - **Deviation log expectations:** v4 beta API call-site adjustments are expected and fine; record them as code comments only when the call shape differs materially from this plan. Module boundaries, error types, derivation rules, and test expectations are NOT adjustable without coming back to the user.
 - **PRD parity check before calling it done:** `info` output format, all eight commands' flags, and the safety rules section of the PRD.
 
+**KRISS LAURE migration parity facts (added 2026-06-11, one commit per feature):**
+- `ports.hashAlgorithm: "fnv1a32" | "posix-cksum"` (default `"fnv1a32"`) selects the port-offset hash; `posixCksum` in `src/core/port-allocator.ts` is bit-for-bit the POSIX 1003.2 `cksum` CRC (poly 0x04C11DB7 MSB-first, init 0, message bytes then length appended LSB-first with leading zero bytes stripped, final ones-complement), verified against the system binary and pinned vectors (`"" → 4294967295`, `"a" → 1220704766`, `"kl_e2e_demo" → 3289475723`, `"kl_123_payment_flow" → 1428013586`).
+
 

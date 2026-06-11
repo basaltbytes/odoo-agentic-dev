@@ -46,6 +46,7 @@ const ConfigInputSchema = Schema.Struct({
       odooBase: Schema.optional(Schema.Number),
       companionBase: Schema.optional(Schema.Number),
       range: Schema.optional(Schema.Number),
+      hashAlgorithm: Schema.optional(Schema.Literals(["fnv1a32", "posix-cksum"])),
     }),
   ),
   odoo: Schema.Struct({
@@ -126,6 +127,7 @@ export const normalizeConfig = (
     odooBase: input.ports?.odooBase ?? 18069,
     companionBase: input.ports?.companionBase ?? 28000,
     range: input.ports?.range ?? 1000,
+    hashAlgorithm: input.ports?.hashAlgorithm ?? ("fnv1a32" as const),
   };
   if (!Number.isInteger(ports.range) || ports.range < 10) {
     issues.push(`ports.range must be an integer >= 10, got ${ports.range}`);

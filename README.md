@@ -68,7 +68,8 @@ export default defineConfig({
   ports: {
     odooBase: 18069,
     companionBase: 28028,
-    range: 1000
+    range: 1000,
+    hashAlgorithm: "posix-cksum"
   },
 
   odoo: {
@@ -116,6 +117,8 @@ export default defineConfig({
   ]
 });
 ```
+
+Ports are derived from a hash of the database name modulo `ports.range`. The default hash is FNV-1a 32-bit (`hashAlgorithm: "fnv1a32"`); set `hashAlgorithm: "posix-cksum"` to reproduce the POSIX `cksum` CRC so a project migrating from bash tooling that derives ports via `cksum <<< "$db"` keeps the exact same port per database.
 
 Then:
 

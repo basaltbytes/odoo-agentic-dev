@@ -1,3 +1,5 @@
+import type { PortHashAlgorithm } from "./port-allocator.js";
+
 export const CANONICAL_ENV_VARS = [
   "ODOO_DATABASE",
   "E2E_ODOO_DB",
@@ -75,6 +77,8 @@ export type OdooAgenticDevConfigInput = {
     readonly odooBase?: number;
     readonly companionBase?: number;
     readonly range?: number;
+    /** offset hash over the database name; "posix-cksum" reproduces bash `cksum` tooling */
+    readonly hashAlgorithm?: PortHashAlgorithm;
   };
   readonly odoo: OdooRuntimeConfig;
   readonly database?: OdooDatabaseConfig;
@@ -112,6 +116,7 @@ export type OdooAgenticDevConfig = {
     readonly odooBase: number;
     readonly companionBase: number;
     readonly range: number;
+    readonly hashAlgorithm: PortHashAlgorithm;
   };
   readonly odoo: {
     readonly version: string;

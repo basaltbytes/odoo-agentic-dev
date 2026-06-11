@@ -11,3 +11,4 @@ export type {
   PackageManagerStep,
   PostInitHook,
 } from "./core/project-recipe.js";
+export type { PortHashAlgorithm } from "./core/port-allocator.js";

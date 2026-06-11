@@ -36,7 +36,12 @@ describe("validateConfigInput", () => {
 describe("normalizeConfig", () => {
   it("applies every documented default", () => {
     const cfg = runSyncSuccess(normalized(minimal));
-    expect(cfg.ports).toEqual({ odooBase: 18069, companionBase: 28000, range: 1000 });
+    expect(cfg.ports).toEqual({
+      odooBase: 18069,
+      companionBase: 28000,
+      range: 1000,
+      hashAlgorithm: "fnv1a32",
+    });
     expect(cfg.odoo.serviceName).toBe("odoo");
     expect(cfg.odoo.databaseServiceName).toBe("db");
     expect(cfg.odoo.postgresImage).toBe("postgres:16");
@@ -48,6 +53,17 @@ describe("normalizeConfig", () => {
     expect(cfg.compose.file).toBeNull();
     expect(cfg.companionApps).toEqual([]);
     expect(cfg.cleanup).toEqual({ maxAgeDays: 30, auto: false });
+  });
+
+  it("defaults ports.hashAlgorithm to fnv1a32 and honors posix-cksum", () => {
+    expect(runSyncSuccess(normalized(minimal)).ports.hashAlgorithm).toBe("fnv1a32");
+    expect(
+      runSyncSuccess(normalized({ ...minimal, ports: { hashAlgorithm: "posix-cksum" } })).ports
+        .hashAlgorithm,
+    ).toBe("posix-cksum");
+    expect(
+      runSyncFailure(normalized({ ...minimal, ports: { hashAlgorithm: "md5" } })),
+    ).toBeInstanceOf(ConfigValidationError);
   });
 
   it("honors explicit cleanup settings", () => {
