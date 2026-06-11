@@ -26,7 +26,10 @@ export interface OdooLifecycleApi {
   readonly resetDatabase: (
     recipe: OdooAgenticDevConfig,
     ctx: WorktreeContext,
-    options: { readonly modules?: ReadonlyArray<string>; readonly withoutDemo?: string | false },
+    options: {
+      readonly modules?: ReadonlyArray<string> | undefined;
+      readonly withoutDemo?: string | false | undefined;
+    },
   ) => Effect.Effect<void, RuntimeError>;
   readonly runPostInitHooks: (
     recipe: OdooAgenticDevConfig,

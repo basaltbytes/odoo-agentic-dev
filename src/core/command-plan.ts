@@ -85,11 +85,11 @@ export const odooShellArgs = (odooService: string, databaseName: string): Array<
 ];
 
 export type OdooTestOptions = {
-  readonly tags?: string;
-  readonly file?: string;
-  readonly module?: string;
-  readonly logLevel?: string;
-  readonly extraArgs?: ReadonlyArray<string>;
+  readonly tags?: string | undefined;
+  readonly file?: string | undefined;
+  readonly module?: string | undefined;
+  readonly logLevel?: string | undefined;
+  readonly extraArgs?: ReadonlyArray<string> | undefined;
 };
 
 export const odooTestArgs = (

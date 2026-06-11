@@ -5,12 +5,12 @@ import { CommandFailedError, tail } from "../errors/errors.js";
 export type ExecSpec = {
   readonly command: string;
   readonly args: ReadonlyArray<string>;
-  readonly cwd?: string;
+  readonly cwd?: string | undefined;
   /** merged over the parent process env */
-  readonly env?: Record<string, string>;
-  readonly stdin?: string;
+  readonly env?: Record<string, string> | undefined;
+  readonly stdin?: string | undefined;
   /** line prefix for runInherited streaming, e.g. "[pwa] " */
-  readonly prefix?: string;
+  readonly prefix?: string | undefined;
 };
 
 export type ExecResult = {

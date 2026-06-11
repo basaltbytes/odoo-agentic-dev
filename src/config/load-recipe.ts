@@ -31,7 +31,7 @@ const jiti = createJiti(import.meta.url, { interopDefault: true });
 
 export const loadRecipe = (options: {
   readonly cwd: string;
-  readonly explicitPath?: string;
+  readonly explicitPath?: string | undefined;
   readonly env: Record<string, string | undefined>;
 }): Effect.Effect<
   { readonly rootDir: string; readonly recipe: OdooAgenticDevConfig },
