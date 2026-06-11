@@ -1,4 +1,4 @@
-import { Console, Effect } from "effect";
+import { Effect } from "effect";
 import { Command, Flag } from "effect/unstable/cli";
 import type { OdooAgenticDevConfig } from "../core/project-recipe.js";
 import type { WorktreeContext } from "../core/worktree-context.js";
@@ -7,6 +7,7 @@ import { DockerCompose } from "../platform/docker-compose.js";
 import { StateStore } from "../platform/state-store.js";
 import type { StateStoreApi } from "../platform/state-store.js";
 import { resolveContext } from "./resolve-context.js";
+import { withJsonReport } from "./json-report.js";
 import type { SharedDatabaseProtectionError, StateError } from "../errors/errors.js";
 
 export const guardDown = (
@@ -47,19 +48,27 @@ export const downCommand = Command.make(
       Flag.withDescription("also remove this worktree's volumes"),
     ),
     allowShared: Flag.boolean("allow-shared"),
+    json: Flag.boolean("json").pipe(
+      Flag.withDescription("suppress decorative output; print one final JSON report line"),
+    ),
     config: Flag.string("config").pipe(Flag.optional),
   },
   (flags) =>
-    Effect.gen(function* () {
-      const { ctx, recipe } = yield* resolveContext(flags.config);
-      yield* guardDown(recipe, ctx, flags);
-      const compose = yield* DockerCompose;
-      yield* compose.ensureAvailable();
-      const ref = yield* compose.prepareComposeFile(recipe, ctx);
-      yield* Console.log(
-        `Stopping compose project: ${ctx.composeProjectName} (database: ${ctx.databaseName})`,
-      );
-      yield* compose.stream(ref, buildDownArgs(flags));
-      yield* finalizeDownState(ctx, flags);
-    }),
+    withJsonReport("down", flags.json, (report) =>
+      Effect.gen(function* () {
+        const { ctx, recipe } = yield* resolveContext(flags.config);
+        yield* report.setContext(ctx);
+        yield* guardDown(recipe, ctx, flags);
+        const compose = yield* DockerCompose;
+        yield* compose.ensureAvailable();
+        const ref = yield* compose.prepareComposeFile(recipe, ctx);
+        yield* report.say(
+          `Stopping compose project: ${ctx.composeProjectName} (database: ${ctx.databaseName})`,
+        );
+        yield* compose.stream(ref, buildDownArgs(flags));
+        yield* report.action("compose-down");
+        if (flags.volumes) yield* report.action("remove-volumes");
+        yield* finalizeDownState(ctx, flags);
+      }),
+    ),
 );

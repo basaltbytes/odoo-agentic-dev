@@ -1,0 +1,79 @@
+name: nightly
+# Real-Odoo end-to-end: the only CI that pulls odoo:18 and exercises the
+# template snapshot/restore machinery against a live stack.
+on:
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+jobs:
+  real-odoo:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      # never touch a real user registry; keep the whole run in runner temp
+      ODOO_AGENTIC_DEV_STATE_DB: ${{ runner.temp }}/oad-state/state.db
+      ODOO_WORKTREE_NAME: nightly
+      FIXTURE: ${{ runner.temp }}/nightly-fixture
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 11 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - name: Create fixture project (odoo:18 + postgres:16)
+        run: |
+          mkdir -p "$FIXTURE/addons"
+          cat > "$FIXTURE/odoo-agentic-dev.config.mjs" <<'EOF'
+          export default {
+            project: { id: "nightly", dbPrefix: "nt" },
+            odoo: {
+              version: "18",
+              postgresImage: "postgres:16",
+              addons: [{ host: "addons", container: "/mnt/extra-addons/custom" }]
+            },
+            database: { initialModules: ["base"] }
+          }
+          EOF
+      - name: setup --json takes the full-init + snapshot path
+        working-directory: ${{ env.FIXTURE }}
+        run: |
+          node "$GITHUB_WORKSPACE/dist/cli.js" setup --json | tee setup-out.txt
+          tail -n 1 setup-out.txt | jq -e '
+            .ok == true
+            and .command == "setup"
+            and .database == "nt_nightly"
+            and any(.actions[]; . == "full-init")
+            and any(.actions[]; . == "snapshot-template")'
+      - name: Template database exists (psql in container)
+        working-directory: ${{ env.FIXTURE }}
+        run: |
+          COMPOSE_PROJECT=$(node "$GITHUB_WORKSPACE/dist/cli.js" info --json | jq -r .composeProjectName)
+          docker compose -p "$COMPOSE_PROJECT" \
+            -f .odoo-agentic-dev/compose.generated.yml --project-directory . \
+            exec -T db psql -U odoo -d postgres -tAc \
+            "SELECT 1 FROM pg_database WHERE datname = 'nt_nightly__tpl'" | grep -qx 1
+      - name: reset-db --json takes the template restore path
+        working-directory: ${{ env.FIXTURE }}
+        run: |
+          node "$GITHUB_WORKSPACE/dist/cli.js" reset-db --json | tee reset-out.txt
+          tail -n 1 reset-out.txt | jq -e '
+            .ok == true
+            and .command == "reset-db"
+            and any(.actions[]; . == "restore-from-template")
+            and (any(.actions[]; . == "full-init") | not)'
+      - name: update base
+        working-directory: ${{ env.FIXTURE }}
+        run: node "$GITHUB_WORKSPACE/dist/cli.js" update base
+      - name: down --volumes tears the stack down and forgets it
+        working-directory: ${{ env.FIXTURE }}
+        run: |
+          node "$GITHUB_WORKSPACE/dist/cli.js" down --volumes
+          node "$GITHUB_WORKSPACE/dist/cli.js" list --json | jq -e 'length == 0'
+      - name: No leftover labeled containers or volumes
+        run: |
+          test -z "$(docker ps -aq --filter label=dev.basaltbytes.oad=1)"
+          test -z "$(docker volume ls -q --filter label=dev.basaltbytes.oad=1)"

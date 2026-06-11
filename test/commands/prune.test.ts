@@ -97,6 +97,13 @@ const baseOptions = {
 };
 
 describe("runPrune", () => {
+  it("an empty registry short-circuits without touching docker", async () => {
+    const { recording, run } = makeEnv({ rows: [] });
+    const report = await run(runPrune(baseOptions));
+    expect(report).toEqual({ candidates: [], removed: [] });
+    expect(recording.calls).toEqual([]);
+  });
+
   it("dry run lists candidates and removes nothing", async () => {
     const { recording, run, store } = makeEnv({
       rows: [
@@ -134,7 +141,7 @@ describe("runPrune", () => {
     ]);
   });
 
-  it("vanished rows are forgotten without docker teardown", async () => {
+  it("vanished rows still get the label sweep (no-op here) before the row is forgotten", async () => {
     const { recording, run, store } = makeEnv({
       rows: [makeRow({ composeProject: "kl_vanished" })],
       composeLs: [],
@@ -142,7 +149,28 @@ describe("runPrune", () => {
     const report = await run(runPrune({ ...baseOptions, yes: true }));
     expect(report.removed).toEqual([{ composeProject: "kl_vanished", reason: "vanished" }]);
     expect(store.rows.size).toBe(0);
-    expect(recording.calls.map((c) => c.args[0])).toEqual(["compose"]);
+    // a manual `docker compose down` removes the containers (row turns
+    // vanished) but can leave labeled volumes behind — the sweep finds none
+    // here, so nothing is rm'ed
+    expect(recording.calls.map((c) => c.args)).toEqual([
+      ["compose", "ls", "-a", "--format", "json"],
+      ["ps", "-aq", "--filter", "label=com.docker.compose.project=kl_vanished"],
+      ["volume", "ls", "-q", "--filter", "label=com.docker.compose.project=kl_vanished"],
+    ]);
+  });
+
+  it("vanished rows with leftover labeled volumes get them removed", async () => {
+    const { recording, run } = makeEnv({
+      rows: [makeRow({ composeProject: "kl_vanished" })],
+      composeLs: [],
+      volumes: { kl_vanished: ["kl_vanished_db-data"] },
+    });
+    await run(runPrune({ ...baseOptions, yes: true }));
+    expect(recording.calls.map((c) => c.args)).toContainEqual([
+      "volume",
+      "rm",
+      "kl_vanished_db-data",
+    ]);
   });
 
   it("shared rows are shielded unless allowShared", async () => {

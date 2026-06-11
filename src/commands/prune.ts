@@ -80,6 +80,9 @@ export const runPrune = (
     const store = yield* StateStore;
     const compose = yield* DockerCompose;
     const rows = yield* store.list({ projectId: options.projectId });
+    // an empty registry can have no candidates: skip docker discovery entirely
+    // so `prune` still works (and exits 0) where docker is absent or down
+    if (rows.length === 0) return { candidates: [], removed: [] };
     const dockerProjects = yield* compose.listProjects();
     const probes = yield* buildProbes(rows);
     const classified = classifyEnvironments({
@@ -101,10 +104,10 @@ export const runPrune = (
     const removed: Array<PruneRemoval> = [];
     for (const candidate of candidates) {
       // teardown order: docker resources first, then the row — failing midway
-      // leaves the row behind for the next run instead of orphaning containers
-      if (candidate.reason !== "vanished") {
-        yield* compose.removeByLabel(candidate.row.composeProject);
-      }
+      // leaves the row behind for the next run instead of orphaning containers.
+      // vanished rows are swept too: a manual `docker compose down` removes
+      // the containers but can leave labeled volumes behind (no-op otherwise)
+      yield* compose.removeByLabel(candidate.row.composeProject);
       yield* store.remove(candidate.row.composeProject);
       removed.push({ composeProject: candidate.row.composeProject, reason: candidate.reason });
     }

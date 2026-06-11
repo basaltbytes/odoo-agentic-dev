@@ -5,6 +5,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import { Effect, Layer } from "effect";
 import {
   collectDoctorChecks,
+  composeVersionOk,
   detectWsl,
   formatDoctorReport,
   hasHardFailure,
@@ -107,6 +108,15 @@ describe("pure helpers", () => {
     expect(nodeVersionOk("23.0.0")).toBe(true);
     expect(nodeVersionOk("24.1.0")).toBe(true);
     expect(nodeVersionOk("21.9.0")).toBe(false);
+  });
+
+  it("composeVersionOk accepts the v2+ plugin and rejects python compose v1", () => {
+    expect(composeVersionOk("Docker Compose version v2.27.1\n")).toBe(true);
+    // modern plugin releases moved past v2 numbering (e.g. v5.x) — still the v2 architecture
+    expect(composeVersionOk("Docker Compose version v5.1.3\n")).toBe(true);
+    expect(composeVersionOk("docker-compose version 1.29.2\n")).toBe(false);
+    expect(composeVersionOk("")).toBe(false);
+    expect(composeVersionOk("garbage")).toBe(false);
   });
 
   it("detectWsl looks for microsoft in /proc/version", () => {

@@ -6,7 +6,7 @@ Projects describe themselves with one typed recipe file (`odoo-agentic-dev.confi
 
 ## Requirements
 
-- Node.js 20 or newer
+- Node.js 22.15 or newer (the state registry uses the built-in `node:sqlite` — no native dependency)
 - [pnpm](https://pnpm.io)
 - Docker (Docker Desktop on macOS, Docker Engine on Linux) — `info` works without it
 - Windows: **WSL2 only**. Native PowerShell / `cmd.exe` execution is not supported in v1.
@@ -141,18 +141,23 @@ Print the resolved worktree context (worktree name, database, Compose project, O
 
 ### `odoo-agentic-dev setup`
 
-Prepare a new worktree: initialize Git submodules (if the recipe asks for it), run the recipe's package manager install steps, ensure the Docker image builds, reset and initialize the current worktree database, run post-init hooks, and print URLs. It prints the resolved database before destructive work and never deletes a shared database by default.
+Prepare a new worktree: initialize Git submodules (if the recipe asks for it), run the recipe's package manager install steps, ensure the Docker image builds, reset and initialize the current worktree database, run post-init hooks, and print URLs. It prints the resolved database before destructive work and never deletes a shared database by default. The database step honors the same template fast-reset semantics as `reset-db` (see below).
 
 | Flag | Meaning |
 | --- | --- |
 | `--skip-install` | skip submodule + package manager steps |
 | `--skip-db` | skip database reset/initialization |
 | `--allow-shared` | permit acting on the shared database |
+| `--no-template` | full init even when a template snapshot exists (template kept) |
+| `--refresh-template` | full init and take a fresh template snapshot |
+| `--json` | suppress decorative output; print one final JSON report line |
 | `--config <path>` | explicit config file path |
 
 ### `odoo-agentic-dev up`
 
 Start Odoo (and PostgreSQL) on the derived port, then the configured companion apps with context-derived env injected (`ODOO_DATABASE`, `ODOO_BASE_URL`, per-app ports). In attached mode, Ctrl-C stops all child processes and the first failing process is reported.
+
+Before starting anything, `up` probes the derived Odoo port. If it is busy and the holder is not this worktree's own already-running stack (idempotent `up`), it fails fast with a `PortConflictError` naming the holder stack when the state registry knows it — set `ODOO_HTTP_PORT` to override, or `prune` stale environments.
 
 | Flag | Meaning |
 | --- | --- |
@@ -160,16 +165,18 @@ Start Odoo (and PostgreSQL) on the derived port, then the configured companion a
 | `--no-build` | start containers without rebuilding the image |
 | `--logs` | follow Odoo logs after start |
 | `--detach` | start containers and return |
+| `--json` | suppress decorative output; print one final JSON report line |
 | `--config <path>` | explicit config file path |
 
 ### `odoo-agentic-dev down`
 
-Stop the current worktree stack. Uses the derived Compose project name, so other worktrees are never affected.
+Stop the current worktree stack. Uses the derived Compose project name, so other worktrees are never affected. A plain `down` keeps the environment in the state registry (only refreshing its last-used time); `down --volumes` removes the registry row along with the volumes.
 
 | Flag | Meaning |
 | --- | --- |
 | `--volumes` | also remove this worktree's volumes (guarded for shared databases) |
 | `--allow-shared` | permit acting on the shared database |
+| `--json` | suppress decorative output; print one final JSON report line |
 | `--config <path>` | explicit config file path |
 
 ### `odoo-agentic-dev reset-db`
@@ -181,9 +188,23 @@ Delete and recreate the current worktree database and filestore, terminate activ
 | `--allow-shared` | permit resetting the shared database |
 | `--modules <list>` | comma-separated module list (defaults to the recipe's `initialModules`) |
 | `--without-demo <mode>` | demo-data mode passed straight to Odoo's `--without-demo` |
+| `--no-template` | full init even when a template snapshot exists (template kept) |
+| `--refresh-template` | full init and take a fresh template snapshot |
+| `--json` | suppress decorative output; print one final JSON report line |
 | `--config <path>` | explicit config file path |
 
 Demo data is controlled at database initialization time, not per test run. The recipe's `database.withoutDemo` sets the default: a string mode (for example `"all"`) is passed to Odoo's `--without-demo`, while `withoutDemo: false` omits the flag entirely so Odoo installs demo data. The `--without-demo <mode>` flag overrides the recipe for one reset, passing the mode string straight through to Odoo.
+
+#### Template fast reset
+
+The first successful full init (from `setup` or `reset-db`) is snapshotted — after the post-init hooks — as a PostgreSQL template database named `<database>__tpl` plus a filestore copy. Subsequent `reset-db` runs restore from that template in seconds instead of re-running module installation; post-init hooks are **not** re-run on restore because their effects are baked into the snapshot.
+
+Snapshots carry a key derived from `initialModules`, `withoutDemo`, `odoo.version`, and the `postInit` hooks. Changing any of these invalidates the template: the next `reset-db` automatically falls back to a full init and takes a fresh snapshot. One-off `--modules`/`--without-demo` overrides always force a full init without touching the stored template.
+
+- `--no-template` forces a full init for one run, keeping the existing snapshot.
+- `--refresh-template` forces a full init and replaces the snapshot.
+- PostgreSQL is per-stack, so templates only accelerate resets within the same worktree.
+- Database names are budgeted so `<database>__tpl` fits PostgreSQL's 63-char identifier limit (derived names are capped at 58 chars); an explicitly overridden name longer than 58 chars simply skips snapshotting.
 
 ### `odoo-agentic-dev update <modules>`
 
@@ -197,6 +218,7 @@ pnpm exec odoo-agentic-dev update KL_base,KL_sale,KL_stock
 | Flag | Meaning |
 | --- | --- |
 | `--no-restart` | do not restart Odoo after the update |
+| `--json` | suppress decorative output; print one final JSON report line |
 | `--config <path>` | explicit config file path |
 
 ### `odoo-agentic-dev test`
@@ -211,6 +233,7 @@ Run Odoo tests against the current worktree database. Options map to Odoo CLI fl
 | `--log-level <level>` | Odoo log level |
 | `--profile <name>` | recipe-defined test profile (extra Odoo args) |
 | `--include-demo` | accepted for compatibility; demo data is controlled at database init in v1 (see `reset-db`) |
+| `--json` | suppress decorative output; print one final JSON report line (includes `exitCode`) |
 | `--config <path>` | explicit config file path |
 
 ### `odoo-agentic-dev link-source`
@@ -224,6 +247,99 @@ Create or refresh a local Odoo source pointer such as `.odoo` (a symlink on macO
 | `--force` | replace an existing symlink |
 | `--config <path>` | explicit config file path |
 
+### `odoo-agentic-dev list`
+
+List the environments this machine's state registry knows about, reconciled against Docker reality: status is `running`, `stopped`, or `vanished` (row exists, Docker stack is gone). Labeled Docker stacks that are missing from the registry are adopted into it on sight. Output columns: worktree, database, port, status, relative last-used time, and `shared`/`template` markers. Listing never modifies or removes environments.
+
+| Flag | Meaning |
+| --- | --- |
+| `--all-projects` | every project in the registry (works without a config) |
+| `--json` | print the full rows + status as JSON |
+| `--config <path>` | explicit config file path |
+
+### `odoo-agentic-dev prune`
+
+Garbage-collect dead environments. By default only clearly-dead targets are candidates: `gone-branch` (root dir exists, is a repo, the recorded branch was deleted), `gone-rootdir` (the worktree directory no longer exists), and `vanished` (registry row with no Docker stack — row-only cleanup). Age alone never makes a candidate unless you pass `--older-than <days>`.
+
+The safety contract:
+
+- Without `--yes`, `prune` is a dry run: it prints the kill list (stack, database, age, reason) and exits 1 when candidates exist, 0 when there are none. Nothing is removed.
+- With `--yes`, teardown is label-based (`docker rm -f` + `docker volume rm` by Compose project label), so it works even when the original compose file is gone; the registry row is removed last.
+- Shared environments are always skipped unless `--allow-shared` is passed.
+- The environment a command is currently running in is never an auto-clean candidate.
+
+| Flag | Meaning |
+| --- | --- |
+| `--older-than <days>` | also prune environments unused for more than `<days>` |
+| `--all-projects` | every project in the registry (works without a config) |
+| `--yes` | actually remove (without it: dry run, exit 1 when candidates exist) |
+| `--allow-shared` | permit pruning shared environments |
+| `--json` | print the candidates/removals report as JSON |
+| `--config <path>` | explicit config file path |
+
+### `odoo-agentic-dev doctor`
+
+Environment health report (`✓`/`✗` per check, or `--json`): Docker daemon responsive, Compose is v2, Node >= 22.15, config discovery + validation (soft when absent), context derivation, Odoo port free or its holder identified, port collisions among known stacks, state registry openable and writable, git on PATH, WSL2 detection with setup guidance, and the current prune-candidate count. Exits 1 if any hard check fails.
+
+| Flag | Meaning |
+| --- | --- |
+| `--json` | print the checks array as JSON |
+| `--config <path>` | explicit config file path |
+
+### `odoo-agentic-dev logs [service]`
+
+Stream `docker compose logs` for one service of the current worktree stack (default: the Odoo service).
+
+| Flag | Meaning |
+| --- | --- |
+| `--follow` | follow log output |
+| `--config <path>` | explicit config file path |
+
+### `odoo-agentic-dev shell`
+
+Open an interactive `odoo shell` against the current worktree database (`docker compose run --rm <odoo> odoo shell -d <database>`), with full TTY passthrough. The child's exit code becomes the command's exit code.
+
+### `odoo-agentic-dev psql [-- <args>]`
+
+Open `psql` inside the database container connected to the current worktree database. Extra `psql` arguments pass through after `--`:
+
+```bash
+pnpm exec odoo-agentic-dev psql -- -c 'SELECT count(*) FROM res_partner;'
+```
+
+## Machine-Readable Output (`--json`)
+
+`info`, `list`, `doctor`, and `prune` have dedicated JSON shapes and keep stdout pure JSON (warnings go to stderr).
+
+The lifecycle commands — `setup`, `up`, `down`, `reset-db`, `update`, `test` — accept `--json` too: decorative output is suppressed and one final single-line JSON object is printed to stdout:
+
+```json
+{ "ok": true, "command": "reset-db", "database": "kl_feature_x", "composeProject": "kl_kl_feature_x", "odooUrl": "http://127.0.0.1:18119/web?db=kl_feature_x", "actions": ["restore-from-template"], "durationMs": 4180, "exitCode": 0 }
+```
+
+`actions` records what the command did (for `reset-db`/`setup` it includes `restore-from-template` or `full-init` + `snapshot-template`, so tooling can tell which reset path ran); `exitCode` appears when the command ran a child to completion (`test`). Streamed child output (image builds, Odoo logs) may still precede the report, so parse the **last line** of stdout (`tail -n 1 | jq`). On failure the object is emitted with `"ok": false` before the error is rendered on stderr.
+
+## State Registry
+
+Every lifecycle command records its environment (compose project, database, root dir, branch, port, timestamps, template metadata) in a machine-global SQLite registry at `${XDG_DATA_HOME:-~/.local/share}/odoo-agentic-dev/state.db`, overridable via the `ODOO_AGENTIC_DEV_STATE_DB` environment variable. It needs no setup and no external dependency (built-in `node:sqlite`, hence Node >= 22.15).
+
+The registry is an index — Docker is the truth. Generated compose files stamp `dev.basaltbytes.oad.*` identity labels on services and volumes so `list`/`prune`/`doctor` can reconcile rows against reality and re-adopt stacks whose rows were lost. Project-supplied compose files (recipe `compose.file`) are not labeled; those environments are tracked by their registry rows alone.
+
+## Automatic Cleanup
+
+```ts
+cleanup: {
+  maxAgeDays: 30,  // staleness threshold used by the auto/warn hook
+  auto: false      // false (default): warn only; true: prune automatically
+}
+```
+
+At the end of `up` and `setup`, the registry is checked for dead environments of the current project. With `auto: false` (the default) a one-line warning is printed when candidates exist (`N stale environment(s) — run odoo-agentic-dev prune`). With `auto: true` the prune routine runs immediately for gone/vanished environments and those unused for more than `maxAgeDays`, never touching shared environments or the environment the command is running in, and prints what it removed.
+
+## Network Exposure
+
+The generated Compose file binds Odoo to the loopback interface only (`127.0.0.1:<port>:8069`): another machine on your LAN can never reach a dev Odoo by default. To expose a stack deliberately, supply your own compose file via the recipe's `compose.file` with the port mapping you want (for example `"0.0.0.0:8069:8069"`) — deliberate exposure is a project decision, not a CLI flag.
+
 ## Environment Variables
 
 | Variable | Meaning |
@@ -235,6 +351,7 @@ Create or refresh a local Odoo source pointer such as `.odoo` (a symlink on macO
 | `ODOO_COMPOSE_PROJECT_NAME` | Docker Compose project |
 | `ODOO_WORKTREE_NAME` | Override for derived worktree name |
 | `ODOO_WORKTREE_CONFIG` | Config file path override |
+| `ODOO_AGENTIC_DEV_STATE_DB` | State registry path override (default `${XDG_DATA_HOME:-~/.local/share}/odoo-agentic-dev/state.db`) |
 
 Explicit env overrides win over derived values, but `E2E_ODOO_DB` and `ODOO_DATABASE` must not disagree. Compatibility aliases for existing projects (for example `KL_WORKTREE_DB_NAME`) can be declared in the recipe via `envAliases`.
 
@@ -247,6 +364,9 @@ Explicit env overrides win over derived values, but `E2E_ODOO_DB` and `ODOO_DATA
 - The resolved database and Compose project are printed before destructive work.
 - Config validation failures fail closed: no command proceeds on an invalid recipe.
 - Confirmations are flags-only — there are no interactive prompts, so non-interactive agents never hang waiting for input.
+- `prune` is a dry run unless `--yes` is passed, skips shared environments unless `--allow-shared`, and only ages out environments when `--older-than` is given.
+- `up` fails fast on a port conflict instead of silently probing for another port — same branch, same port, always.
+- Generated stacks bind Odoo to `127.0.0.1` only; LAN exposure requires a deliberate project-supplied compose file.
 
 ## Post-Init Hooks
 
@@ -274,6 +394,6 @@ pnpm format        # oxfmt --write
 pnpm format:check  # oxfmt --check
 ```
 
-The test suite never requires Docker, Git state, or a network connection — adapters are faked. `scripts/docker-integration.sh` is a separate minimal Docker integration check (compose file generation + validation against a real Docker) used by the Linux CI job; it is not part of `pnpm test`. The full Odoo image lifecycle is intentionally out of scope for CI v1 — the Odoo image pull is gigabytes.
+The test suite never requires Docker, Git state, or a network connection — adapters are faked, and every state-touching test pins `ODOO_AGENTIC_DEV_STATE_DB` to a temp file so your real registry is never touched. `scripts/docker-integration.sh` is a separate minimal Docker integration check (compose file generation + validation against a real Docker) used by the Linux CI job; it is not part of `pnpm test`.
 
-CI runs lint/typecheck/build/test on Linux, macOS, and Windows (the Windows job exercises the dry-run unit suite only — no Docker), plus the Docker integration job on Linux.
+CI runs lint/typecheck/build/test on Linux, macOS, and Windows across Node 22 and 24 (the Windows job exercises the dry-run unit suite only — no Docker), plus the Docker integration job on Linux. A nightly workflow (`.github/workflows/nightly.yml`, also runnable via `workflow_dispatch`) exercises the real `odoo:18` + `postgres:16` lifecycle end to end: `setup` with a template snapshot, `reset-db` down the template restore path, `update base`, and a fully clean `down --volumes`.

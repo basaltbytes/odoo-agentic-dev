@@ -6,6 +6,7 @@ import type { OdooTestOptions } from "../core/command-plan.js";
 import { OdooLifecycle } from "../platform/odoo-lifecycle.js";
 import { resolveContext } from "./resolve-context.js";
 import { recordEnvironment } from "./state-hooks.js";
+import { withJsonReport } from "./json-report.js";
 
 export const resolveTestOptions = (
   recipe: OdooAgenticDevConfig,
@@ -61,33 +62,48 @@ export const testCommand = Command.make(
         "accepted for compatibility; demo data is controlled at database init in v1",
       ),
     ),
+    json: Flag.boolean("json").pipe(
+      Flag.withDescription("suppress decorative output; print one final JSON report line"),
+    ),
     config: Flag.string("config").pipe(Flag.optional),
   },
   (flags) =>
-    Effect.gen(function* () {
-      const { ctx, recipe } = yield* resolveContext(flags.config);
-      yield* recordEnvironment(recipe, ctx);
-      if (flags.includeDemo) {
-        yield* Console.log(
-          "note: --include-demo has no effect in v1; reset the database with --without-demo=false instead",
+    withJsonReport("test", flags.json, (report) =>
+      Effect.gen(function* () {
+        const { ctx, recipe } = yield* resolveContext(flags.config);
+        yield* report.setContext(ctx);
+        yield* recordEnvironment(recipe, ctx);
+        if (flags.includeDemo) {
+          yield* report.say(
+            "note: --include-demo has no effect in v1; reset the database with --without-demo=false instead",
+          );
+        }
+        const options = yield* resolveTestOptions(recipe, {
+          tags: Option.getOrUndefined(flags.tags),
+          file: Option.getOrUndefined(flags.file),
+          module: Option.getOrUndefined(flags.module),
+          logLevel: Option.getOrUndefined(flags.logLevel),
+          profile: Option.getOrUndefined(flags.profile),
+        });
+        const lifecycle = yield* OdooLifecycle;
+        const { exitCode, stderrTail, stdoutTail } = yield* lifecycle.runTests(
+          recipe,
+          ctx,
+          options,
         );
-      }
-      const options = yield* resolveTestOptions(recipe, {
-        tags: Option.getOrUndefined(flags.tags),
-        file: Option.getOrUndefined(flags.file),
-        module: Option.getOrUndefined(flags.module),
-        logLevel: Option.getOrUndefined(flags.logLevel),
-        profile: Option.getOrUndefined(flags.profile),
-      });
-      const lifecycle = yield* OdooLifecycle;
-      const { exitCode, stderrTail, stdoutTail } = yield* lifecycle.runTests(recipe, ctx, options);
-      if (stdoutTail.length > 0) process.stdout.write(stdoutTail + "\n");
-      if (stderrTail.length > 0) process.stderr.write(stderrTail + "\n");
-      if (exitCode !== 0) {
-        yield* Console.error(`Tests failed (odoo exit ${exitCode})`);
-        process.exitCode = exitCode;
-      } else {
-        yield* Console.log("Tests passed");
-      }
-    }),
+        yield* report.action("run-tests");
+        yield* report.setExitCode(exitCode);
+        // in json mode the test tail moves to stderr so stdout stays parseable
+        if (stdoutTail.length > 0) {
+          (report.json ? process.stderr : process.stdout).write(stdoutTail + "\n");
+        }
+        if (stderrTail.length > 0) process.stderr.write(stderrTail + "\n");
+        if (exitCode !== 0) {
+          yield* Console.error(`Tests failed (odoo exit ${exitCode})`);
+          process.exitCode = exitCode;
+        } else {
+          yield* report.say("Tests passed");
+        }
+      }),
+    ),
 );

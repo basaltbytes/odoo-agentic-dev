@@ -32,6 +32,16 @@ export const nodeVersionOk = (version: string): boolean => {
   return major > 22 || (major === 22 && minor >= 15);
 };
 
+/**
+ * "Compose v2" means the Go `docker compose` plugin (the python v1
+ * `docker-compose` is unsupported). Plugin releases moved past v2 numbering
+ * (v5.x today), so accept any major >= 2 instead of grepping for "v2".
+ */
+export const composeVersionOk = (stdout: string): boolean => {
+  const match = stdout.match(/version\s+v?(\d+)/i);
+  return match !== null && Number.parseInt(match[1]!, 10) >= 2;
+};
+
 export const detectWsl = (procVersion: string | null): boolean =>
   procVersion !== null && procVersion.toLowerCase().includes("microsoft");
 
@@ -103,14 +113,14 @@ export const collectDoctorChecks = (
     });
 
     const composeVersion = yield* exec("docker", ["compose", "version"]);
-    const composeOk = composeVersion.exitCode === 0 && composeVersion.stdout.includes("v2");
+    const composeOk = composeVersion.exitCode === 0 && composeVersionOk(composeVersion.stdout);
     checks.push({
       name: "compose-v2",
       ok: composeOk,
       hard: true,
       detail: composeOk
         ? (composeVersion.stdout.trim().split("\n")[0] ?? "")
-        : "docker compose v2 not found (compose v1 is unsupported)",
+        : "docker compose v2+ not found (python compose v1 is unsupported)",
     });
 
     checks.push({

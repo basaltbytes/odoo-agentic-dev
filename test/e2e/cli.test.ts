@@ -59,6 +59,76 @@ export default {
     expect(result.stdout).toContain("No environments recorded.");
   });
 
+  // every state-touching e2e pins ODOO_AGENTIC_DEV_STATE_DB to a temp path —
+  // the real user registry must never be touched by the test suite
+  const spawn = (args: Array<string>, env: Record<string, string> = {}) =>
+    spawnSync("node", [CLI, ...args], {
+      cwd: dir,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        ODOO_WORKTREE_NAME: "feature/demo",
+        ODOO_AGENTIC_DEV_STATE_DB: join(dir, `state-${args[0]}.db`),
+        ...env,
+      },
+    });
+
+  it("list --json prints a pure-JSON empty array on a fresh state db", () => {
+    const result = spawn(["list", "--json"]);
+    expect(result.status).toBe(0);
+    // full stdout purity: the whole stream parses as JSON
+    expect(JSON.parse(result.stdout)).toEqual([]);
+  });
+
+  it("doctor --json prints pure JSON with the checks array, exit code per hard-check semantics", () => {
+    const result = spawn(["doctor", "--json"]);
+    const parsed = JSON.parse(result.stdout) as {
+      checks: Array<{ name: string; ok: boolean; hard: boolean; detail: string }>;
+    };
+    expect(Array.isArray(parsed.checks)).toBe(true);
+    expect(parsed.checks.length).toBeGreaterThan(0);
+    for (const check of parsed.checks) {
+      expect(typeof check.name).toBe("string");
+      expect(typeof check.ok).toBe("boolean");
+      expect(typeof check.hard).toBe("boolean");
+      expect(typeof check.detail).toBe("string");
+    }
+    // docker may or may not exist on the runner; either way the exit code
+    // must reflect the hard-check verdict, not crash
+    const hardFailed = parsed.checks.some((check) => check.hard && !check.ok);
+    expect(result.status).toBe(hardFailed ? 1 : 0);
+  });
+
+  it("bare prune exits 0 when there are no candidates (works without docker)", () => {
+    const result = spawn(["prune"]);
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("Nothing to prune.");
+  });
+
+  it("prune --json prints a pure-JSON dry-run report", () => {
+    const result = spawn(["prune", "--json"]);
+    expect(result.status).toBe(0);
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      applied: false,
+      candidates: [],
+      removed: [],
+    });
+  });
+
+  it("lifecycle --json: the last stdout line is one parseable JSON report (down)", () => {
+    const result = spawn(["down", "--json"]);
+    const lines = result.stdout.trim().split("\n");
+    const parsed = JSON.parse(lines.at(-1)!) as Record<string, unknown>;
+    expect(parsed.command).toBe("down");
+    expect(parsed.database).toBe("fx_demo");
+    expect(parsed.composeProject).toBe("fixture_fx_demo");
+    expect(Array.isArray(parsed.actions)).toBe(true);
+    expect(typeof parsed.durationMs).toBe("number");
+    // ok mirrors the process exit code whether or not docker is available here
+    expect(typeof parsed.ok).toBe("boolean");
+    expect(parsed.ok).toBe(result.status === 0);
+  });
+
   it("bare invocation prints help without the ShowHelp noise line and exits nonzero", () => {
     let status = 0;
     let stdout = "";

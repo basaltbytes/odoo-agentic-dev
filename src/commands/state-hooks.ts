@@ -80,6 +80,7 @@ export const ensurePortAvailable = (
 export const warnOrAutoClean = (
   recipe: OdooAgenticDevConfig,
   ctx: WorktreeContext,
+  say: (line: string) => Effect.Effect<void> = Console.log,
 ): Effect.Effect<
   ReadonlyArray<ClassifiedEnvironment>,
   StateError | ComposeCommandError,
@@ -95,7 +96,7 @@ export const warnOrAutoClean = (
         excludeComposeProject: ctx.composeProjectName,
       });
       for (const removal of report.removed) {
-        yield* Console.log(`auto-clean: removed ${removal.composeProject} (${removal.reason})`);
+        yield* say(`auto-clean: removed ${removal.composeProject} (${removal.reason})`);
       }
       return report.candidates;
     }
@@ -120,8 +121,6 @@ export const warnOrAutoClean = (
         c.row.composeProject !== ctx.composeProjectName,
     );
     if (candidates.length === 0) return candidates;
-    yield* Console.log(
-      `${candidates.length} stale environment(s) — run \`odoo-agentic-dev prune\``,
-    );
+    yield* say(`${candidates.length} stale environment(s) — run \`odoo-agentic-dev prune\``);
     return candidates;
   });
