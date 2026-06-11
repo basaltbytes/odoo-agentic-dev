@@ -48,18 +48,22 @@ export default {
 
   // 120s budget: cold Windows CI runners have been observed taking 45s+ to
   // first-spawn node + sqlite WAL on a temp path (global timeout is 20s)
-  it("never leaks the sqlite ExperimentalWarning (builtins evaluate before user modules)", { timeout: 120_000 }, () => {
-    // `list --all-projects` builds StateStoreLive (loads node:sqlite) and
-    // degrades gracefully without docker, so it runs anywhere
-    const result = spawnSync("node", [CLI, "list", "--all-projects"], {
-      cwd: dir,
-      encoding: "utf8",
-      env: { ...process.env, ODOO_AGENTIC_DEV_STATE_DB: join(dir, "e2e-state.db") },
-    });
-    expect(result.status).toBe(0);
-    expect(result.stderr).not.toContain("ExperimentalWarning");
-    expect(result.stdout).toContain("No environments recorded.");
-  });
+  it(
+    "never leaks the sqlite ExperimentalWarning (builtins evaluate before user modules)",
+    { timeout: 120_000 },
+    () => {
+      // `list --all-projects` builds StateStoreLive (loads node:sqlite) and
+      // degrades gracefully without docker, so it runs anywhere
+      const result = spawnSync("node", [CLI, "list", "--all-projects"], {
+        cwd: dir,
+        encoding: "utf8",
+        env: { ...process.env, ODOO_AGENTIC_DEV_STATE_DB: join(dir, "e2e-state.db") },
+      });
+      expect(result.status).toBe(0);
+      expect(result.stderr).not.toContain("ExperimentalWarning");
+      expect(result.stdout).toContain("No environments recorded.");
+    },
+  );
 
   // every state-touching e2e pins ODOO_AGENTIC_DEV_STATE_DB to a temp path —
   // the real user registry must never be touched by the test suite
