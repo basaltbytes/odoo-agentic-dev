@@ -57,6 +57,22 @@ describe("buildWorktreeContext", () => {
     expect(ctx.databaseName).toBe("kl_custom_name");
   });
 
+  it("records the real git branch on the context", () => {
+    expect(runSyncSuccess(build(onBranch("feature/x"))).branch).toBe("feature/x");
+    expect(runSyncSuccess(build({ _tag: "Detached" })).branch).toBeNull();
+    expect(runSyncSuccess(build({ _tag: "NotARepo" })).branch).toBeNull();
+  });
+
+  it("ODOO_WORKTREE_NAME is a name override, never a branch", () => {
+    // on a branch the real branch is kept; without one the override adds none
+    expect(
+      runSyncSuccess(build(onBranch("feature/x"), { ODOO_WORKTREE_NAME: "custom-name" })).branch,
+    ).toBe("feature/x");
+    expect(
+      runSyncSuccess(build({ _tag: "Detached" }, { ODOO_WORKTREE_NAME: "custom-name" })).branch,
+    ).toBeNull();
+  });
+
   it("agreeing ODOO_DATABASE/E2E_ODOO_DB overrides are honored", () => {
     const ctx = runSyncSuccess(
       build(onBranch("main"), { ODOO_DATABASE: "kl_pinned", E2E_ODOO_DB: "kl_pinned" }),

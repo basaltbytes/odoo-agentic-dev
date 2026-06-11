@@ -16,6 +16,8 @@ export type GitState =
 export type WorktreeContext = {
   readonly rootDir: string;
   readonly worktreeName: string;
+  /** the real git branch; null when detached / not a repo (name overrides don't count) */
+  readonly branch: string | null;
   readonly databaseName: string;
   readonly composeProjectName: string;
   readonly odooHttpPort: number;
@@ -93,6 +95,7 @@ export const buildWorktreeContext = (options: {
     return {
       rootDir,
       worktreeName,
+      branch: branch ?? null,
       databaseName,
       composeProjectName,
       odooHttpPort,

@@ -3,7 +3,7 @@ import type { WorktreeContext } from "./worktree-context.js";
 
 export type ComposeModel = {
   readonly services: Record<string, Record<string, unknown>>;
-  readonly volumes: Record<string, Record<string, never>>;
+  readonly volumes: Record<string, { readonly labels: Record<string, string> }>;
 };
 
 export const GENERATED_COMPOSE_RELATIVE_PATH = ".odoo-agentic-dev/compose.generated.yml";
@@ -11,12 +11,29 @@ export const GENERATED_COMPOSE_RELATIVE_PATH = ".odoo-agentic-dev/compose.genera
 const hostPath = (host: string): string =>
   host.startsWith("/") || host.startsWith("./") || host.startsWith("../") ? host : `./${host}`;
 
+/**
+ * Drift-proofing labels stamped on every generated service and volume so
+ * `list`/`prune`/`doctor` can reconcile Docker reality against the state
+ * registry (and adopt stacks whose rows were lost) without the compose file.
+ */
+export const buildOadLabels = (
+  recipe: OdooAgenticDevConfig,
+  ctx: WorktreeContext,
+): Record<string, string> => ({
+  "dev.basaltbytes.oad": "1",
+  "dev.basaltbytes.oad.project-id": recipe.project.id,
+  "dev.basaltbytes.oad.database": ctx.databaseName,
+  "dev.basaltbytes.oad.root-dir": ctx.rootDir,
+  "dev.basaltbytes.oad.branch": ctx.branch ?? "",
+});
+
 export const buildComposeModel = (
   recipe: OdooAgenticDevConfig,
   ctx: WorktreeContext,
 ): ComposeModel => {
   const dbService = recipe.odoo.databaseServiceName;
   const odooService = recipe.odoo.serviceName;
+  const labels = buildOadLabels(recipe, ctx);
 
   const imageOrBuild: Record<string, unknown> =
     recipe.odoo.dockerfile !== null
@@ -38,12 +55,14 @@ export const buildComposeModel = (
           retries: 30,
         },
         volumes: ["db-data:/var/lib/postgresql/data"],
+        labels,
       },
       [odooService]: {
         ...imageOrBuild,
         depends_on: { [dbService]: { condition: "service_healthy" } },
         environment: { HOST: dbService, USER: "odoo", PASSWORD: "odoo" },
-        ports: [`${ctx.odooHttpPort}:8069`],
+        // loopback-only: never expose the dev Odoo on the LAN by default
+        ports: [`127.0.0.1:${ctx.odooHttpPort}:8069`],
         volumes: [
           "web-data:/var/lib/odoo",
           ...recipe.odoo.addons.map((mount) => `${hostPath(mount.host)}:${mount.container}`),
@@ -51,9 +70,10 @@ export const buildComposeModel = (
             ? [`${hostPath(recipe.odoo.configFile)}:/etc/odoo/odoo.conf`]
             : []),
         ],
+        labels,
       },
     },
-    volumes: { "db-data": {}, "web-data": {} },
+    volumes: { "db-data": { labels }, "web-data": { labels } },
   };
 };
 

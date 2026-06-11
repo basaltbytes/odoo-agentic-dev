@@ -40,16 +40,38 @@ describe("buildComposeModel", () => {
     expect((m.services["odoo"] as Record<string, unknown>)["image"]).toBe("odoo:18.0");
   });
 
-  it("maps the derived port, addon mounts, config mount, and healthy-db dependency", () => {
+  it("maps the derived port on loopback, addon mounts, config mount, and healthy-db dependency", () => {
     const odoo = model.services["odoo"] as Record<string, any>;
-    expect(odoo.ports).toEqual([`${ctx.odooHttpPort}:8069`]);
+    expect(odoo.ports).toEqual([`127.0.0.1:${ctx.odooHttpPort}:8069`]);
     expect(odoo.volumes).toContain("./backend/addons/Custom:/mnt/extra-addons/Custom");
     expect(odoo.volumes).toContain("./config/odoo.worktree.conf:/etc/odoo/odoo.conf");
     expect(odoo.depends_on).toEqual({ db: { condition: "service_healthy" } });
     const db = model.services["db"] as Record<string, any>;
     expect(db.image).toBe("postgres:16");
     expect(db.healthcheck.test).toEqual(["CMD-SHELL", "pg_isready -U odoo -d postgres"]);
-    expect(model.volumes).toEqual({ "db-data": {}, "web-data": {} });
+  });
+
+  it("stamps oad labels on both services and both volumes", () => {
+    const expected = {
+      "dev.basaltbytes.oad": "1",
+      "dev.basaltbytes.oad.project-id": "kriss-laure",
+      "dev.basaltbytes.oad.database": ctx.databaseName,
+      "dev.basaltbytes.oad.root-dir": "/work/kl",
+      "dev.basaltbytes.oad.branch": "feature/x",
+    };
+    expect((model.services["odoo"] as Record<string, unknown>)["labels"]).toEqual(expected);
+    expect((model.services["db"] as Record<string, unknown>)["labels"]).toEqual(expected);
+    expect(model.volumes).toEqual({
+      "db-data": { labels: expected },
+      "web-data": { labels: expected },
+    });
+  });
+
+  it("renders an empty-string branch label when the context has no branch", () => {
+    const m = buildComposeModel(recipe, { ...ctx, branch: null });
+    const labels = (m.services["odoo"] as Record<string, any>)["labels"];
+    expect(labels["dev.basaltbytes.oad.branch"]).toBe("");
+    expect(parse(renderComposeYaml(m))).toEqual(JSON.parse(JSON.stringify(m)));
   });
 
   it("is deterministic", () => {

@@ -3,6 +3,8 @@ import { CommandRunner } from "../platform/command-runner.js";
 import type { CommandRunnerApi, ExecResult, ExecSpec } from "../platform/command-runner.js";
 import { Git } from "../platform/git.js";
 import type { GitApi } from "../platform/git.js";
+import { PortProbe } from "../platform/port-probe.js";
+import type { PortProbeApi } from "../platform/port-probe.js";
 import { StateStore } from "../platform/state-store.js";
 import type { StateStoreApi } from "../platform/state-store.js";
 import type { EnvironmentRow } from "../core/environment.js";
@@ -31,6 +33,10 @@ export const makeRecordingRunner = (
 
 export const makeFakeGit = (state: GitState): Layer.Layer<GitApi> =>
   Layer.succeed(Git, { state: () => Effect.succeed(state) });
+
+/** PortProbe fake: ports in `busyPorts` are reported busy, everything else free. */
+export const makeFakePortProbe = (busyPorts: ReadonlySet<number>): Layer.Layer<PortProbeApi> =>
+  Layer.succeed(PortProbe, { isFree: (port) => Effect.succeed(!busyPorts.has(port)) });
 
 /**
  * StateStore fake backed by an in-memory Map keyed by compose project. Mirrors
