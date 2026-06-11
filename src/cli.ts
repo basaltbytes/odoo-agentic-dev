@@ -9,6 +9,7 @@ import { downCommand } from "./commands/down.js"
 import { resetDbCommand } from "./commands/reset-db.js"
 import { updateCommand } from "./commands/update.js"
 import { testCommand } from "./commands/test.js"
+import { linkSourceCommand } from "./commands/link-source.js"
 import { CommandRunnerLive } from "./platform/command-runner.js"
 import { GitLive } from "./platform/git.js"
 import { DockerComposeLive } from "./platform/docker-compose.js"
@@ -25,7 +26,8 @@ const root = Command.make("odoo-agentic-dev").pipe(
     downCommand,
     resetDbCommand,
     updateCommand,
-    testCommand
+    testCommand,
+    linkSourceCommand
   ])
 )
 
