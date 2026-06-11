@@ -12,12 +12,15 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     env:
-      # never touch a real user registry; keep the whole run in runner temp
-      ODOO_AGENTIC_DEV_STATE_DB: ${{ runner.temp }}/oad-state/state.db
       ODOO_WORKTREE_NAME: nightly
-      FIXTURE: ${{ runner.temp }}/nightly-fixture
     steps:
       - uses: actions/checkout@v4
+      # runner.* is not a valid context in job-level env; derive temp paths here.
+      # Never touch a real user registry; keep the whole run in runner temp.
+      - name: Set temp paths
+        run: |
+          echo "ODOO_AGENTIC_DEV_STATE_DB=$RUNNER_TEMP/oad-state/state.db" >> "$GITHUB_ENV"
+          echo "FIXTURE=$RUNNER_TEMP/nightly-fixture" >> "$GITHUB_ENV"
       - uses: pnpm/action-setup@v4
         with: { version: 11 }
       - uses: actions/setup-node@v4
