@@ -4,10 +4,9 @@ import { Command, Flag } from "effect/unstable/cli";
 import type { OdooAgenticDevConfig } from "../core/project-recipe.js";
 import type { WorktreeContext } from "../core/worktree-context.js";
 import { DockerCompose } from "../platform/docker-compose.js";
-import { OdooLifecycle } from "../platform/odoo-lifecycle.js";
 import { CommandRunner, runInheritedOrFail } from "../platform/command-runner.js";
 import { resolveContext } from "./resolve-context.js";
-import { guardReset } from "./reset-db.js";
+import { guardReset, runResetFlow } from "./reset-db.js";
 import { recordEnvironment, warnOrAutoClean } from "./state-hooks.js";
 import { buildInfoText } from "./info.js";
 
@@ -46,6 +45,12 @@ export const setupCommand = Command.make(
     skipInstall: Flag.boolean("skip-install"),
     skipDb: Flag.boolean("skip-db"),
     allowShared: Flag.boolean("allow-shared"),
+    noTemplate: Flag.boolean("no-template").pipe(
+      Flag.withDescription("full init even when a template snapshot exists (template kept)"),
+    ),
+    refreshTemplate: Flag.boolean("refresh-template").pipe(
+      Flag.withDescription("full init and take a fresh template snapshot"),
+    ),
     config: Flag.string("config").pipe(Flag.optional),
   },
   (flags) =>
@@ -53,7 +58,6 @@ export const setupCommand = Command.make(
       const { ctx, recipe } = yield* resolveContext(flags.config);
       const compose = yield* DockerCompose;
       const runner = yield* CommandRunner;
-      const lifecycle = yield* OdooLifecycle;
       yield* compose.ensureAvailable();
 
       for (const step of buildSetupSteps(recipe, ctx, flags)) {
@@ -83,9 +87,12 @@ export const setupCommand = Command.make(
           }
           case "reset-db":
             yield* guardReset(recipe, ctx, flags.allowShared);
-            yield* Console.log(`Resetting database: ${ctx.databaseName}`);
-            yield* lifecycle.resetDatabase(recipe, ctx, {});
-            yield* lifecycle.runPostInitHooks(recipe, ctx);
+            yield* runResetFlow(recipe, ctx, {
+              noTemplate: flags.noTemplate,
+              refreshTemplate: flags.refreshTemplate,
+              modules: undefined,
+              withoutDemo: undefined,
+            });
             break;
         }
       }

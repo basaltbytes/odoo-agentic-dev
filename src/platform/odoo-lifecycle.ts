@@ -6,7 +6,9 @@ import type { ComposeCommandError, RuntimeError } from "../errors/errors.js";
 import type { OdooAgenticDevConfig } from "../core/project-recipe.js";
 import type { WorktreeContext } from "../core/worktree-context.js";
 import {
+  copyFilestoreArgs,
   createDatabaseSql,
+  createFromTemplateSql,
   dropDatabaseSql,
   expandHook,
   odooInitArgs,
@@ -17,6 +19,7 @@ import {
   removeFilestoreArgs,
   terminateSessionsSql,
 } from "../core/command-plan.js";
+import { templateDbName } from "../core/environment.js";
 import type { OdooTestOptions } from "../core/command-plan.js";
 import { DockerCompose } from "./docker-compose.js";
 import type { ComposeRef } from "./docker-compose.js";
@@ -40,6 +43,19 @@ export interface OdooLifecycleApi {
     ctx: WorktreeContext,
     modules: ReadonlyArray<string>,
     options: { readonly restart: boolean },
+  ) => Effect.Effect<void, RuntimeError>;
+  /**
+   * Snapshot `<db>` into `<db>__tpl` (database + filestore). Docker-only:
+   * recording the template in the state registry is the caller's concern.
+   */
+  readonly snapshotTemplate: (
+    recipe: OdooAgenticDevConfig,
+    ctx: WorktreeContext,
+  ) => Effect.Effect<void, RuntimeError>;
+  /** Recreate `<db>` from `<db>__tpl` (database + filestore). Hooks are baked in. */
+  readonly restoreFromTemplate: (
+    recipe: OdooAgenticDevConfig,
+    ctx: WorktreeContext,
   ) => Effect.Effect<void, RuntimeError>;
   /** Runs the test suite; reporting the tails is the caller's concern. */
   readonly runTests: (
@@ -130,6 +146,36 @@ export const OdooLifecycleLive = Layer.effect(
               }
             }
           }
+        }),
+
+      snapshotTemplate: (recipe, ctx) =>
+        Effect.gen(function* () {
+          const ref = yield* compose.prepareComposeFile(recipe, ctx);
+          yield* ensureDbReady(recipe, ref);
+          const db = recipe.odoo.databaseServiceName;
+          const tpl = templateDbName(ctx.databaseName);
+          yield* compose.run(ref, psqlArgs(db, terminateSessionsSql(ctx.databaseName)));
+          yield* compose.run(ref, psqlArgs(db, dropDatabaseSql(tpl)));
+          yield* compose.run(ref, psqlArgs(db, createFromTemplateSql(tpl, ctx.databaseName)));
+          yield* compose.run(
+            ref,
+            copyFilestoreArgs(recipe.odoo.serviceName, ctx.databaseName, tpl),
+          );
+        }),
+
+      restoreFromTemplate: (recipe, ctx) =>
+        Effect.gen(function* () {
+          const ref = yield* compose.prepareComposeFile(recipe, ctx);
+          yield* ensureDbReady(recipe, ref);
+          const db = recipe.odoo.databaseServiceName;
+          const tpl = templateDbName(ctx.databaseName);
+          yield* compose.run(ref, psqlArgs(db, terminateSessionsSql(ctx.databaseName)));
+          yield* compose.run(ref, psqlArgs(db, dropDatabaseSql(ctx.databaseName)));
+          yield* compose.run(ref, psqlArgs(db, createFromTemplateSql(ctx.databaseName, tpl)));
+          yield* compose.run(
+            ref,
+            copyFilestoreArgs(recipe.odoo.serviceName, tpl, ctx.databaseName),
+          );
         }),
 
       updateModules: (recipe, ctx, modules, options) =>

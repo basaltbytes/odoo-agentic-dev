@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  copyFilestoreArgs,
   createDatabaseSql,
+  createFromTemplateSql,
   dropDatabaseSql,
   expandHook,
   odooInitArgs,
@@ -35,6 +37,28 @@ describe("sql/argv builders", () => {
     expect(terminateSessionsSql("kl_x")).toContain("datname = 'kl_x'");
     expect(dropDatabaseSql("kl_x")).toBe('DROP DATABASE IF EXISTS "kl_x"');
     expect(createDatabaseSql("kl_x")).toBe('CREATE DATABASE "kl_x" OWNER "odoo"');
+  });
+
+  it("createFromTemplateSql quotes both names", () => {
+    expect(createFromTemplateSql("kl_x", "kl_x__tpl")).toBe(
+      'CREATE DATABASE "kl_x" TEMPLATE "kl_x__tpl"',
+    );
+    expect(createFromTemplateSql("kl_x__tpl", "kl_x")).toBe(
+      'CREATE DATABASE "kl_x__tpl" TEMPLATE "kl_x"',
+    );
+  });
+
+  it("copyFilestoreArgs clears the target and copies only when the source exists", () => {
+    expect(copyFilestoreArgs("odoo", "kl_x", "kl_x__tpl")).toEqual([
+      "run",
+      "--rm",
+      "--no-deps",
+      "--entrypoint",
+      "/bin/sh",
+      "odoo",
+      "-c",
+      "rm -rf /var/lib/odoo/filestore/kl_x__tpl && if [ -d /var/lib/odoo/filestore/kl_x ]; then cp -a /var/lib/odoo/filestore/kl_x /var/lib/odoo/filestore/kl_x__tpl; fi",
+    ]);
   });
 
   it("filestore removal runs without deps through /bin/sh", () => {

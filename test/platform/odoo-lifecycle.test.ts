@@ -118,6 +118,63 @@ describe("OdooLifecycle.updateModules", () => {
   });
 });
 
+describe("OdooLifecycle.snapshotTemplate", () => {
+  it("terminates sessions, drops the template, creates it from the db, copies the filestore", async () => {
+    const { ctx, recipe, recording, run } = makeEnv();
+    await run(
+      Effect.gen(function* () {
+        const lifecycle = yield* OdooLifecycle;
+        yield* lifecycle.snapshotTemplate(recipe, ctx);
+      }),
+    );
+    const db = ctx.databaseName;
+    const tpl = `${db}__tpl`;
+    const sql = recording.calls.filter((c) => c.args.includes("psql")).map((c) => c.args.at(-1));
+    expect(sql).toEqual([
+      `SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '${db}' AND pid <> pg_backend_pid()`,
+      `DROP DATABASE IF EXISTS "${tpl}"`,
+      `CREATE DATABASE "${tpl}" TEMPLATE "${db}"`,
+    ]);
+    const calls = joinedCalls(recording);
+    const indexOf = (needle: string) => calls.findIndex((c) => c.includes(needle));
+    expect(indexOf("pg_isready")).toBeGreaterThan(indexOf("up -d db"));
+    expect(indexOf("pg_terminate_backend")).toBeGreaterThan(indexOf("pg_isready"));
+    expect(recording.calls.at(-1)?.args.slice(-8)).toEqual([
+      "run",
+      "--rm",
+      "--no-deps",
+      "--entrypoint",
+      "/bin/sh",
+      "odoo",
+      "-c",
+      `rm -rf /var/lib/odoo/filestore/${tpl} && if [ -d /var/lib/odoo/filestore/${db} ]; then cp -a /var/lib/odoo/filestore/${db} /var/lib/odoo/filestore/${tpl}; fi`,
+    ]);
+  });
+});
+
+describe("OdooLifecycle.restoreFromTemplate", () => {
+  it("terminates sessions, drops the db, recreates it from the template, copies the filestore back", async () => {
+    const { ctx, recipe, recording, run } = makeEnv();
+    await run(
+      Effect.gen(function* () {
+        const lifecycle = yield* OdooLifecycle;
+        yield* lifecycle.restoreFromTemplate(recipe, ctx);
+      }),
+    );
+    const db = ctx.databaseName;
+    const tpl = `${db}__tpl`;
+    const sql = recording.calls.filter((c) => c.args.includes("psql")).map((c) => c.args.at(-1));
+    expect(sql).toEqual([
+      `SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '${db}' AND pid <> pg_backend_pid()`,
+      `DROP DATABASE IF EXISTS "${db}"`,
+      `CREATE DATABASE "${db}" TEMPLATE "${tpl}"`,
+    ]);
+    expect(recording.calls.at(-1)?.args.at(-1)).toBe(
+      `rm -rf /var/lib/odoo/filestore/${db} && if [ -d /var/lib/odoo/filestore/${tpl} ]; then cp -a /var/lib/odoo/filestore/${tpl} /var/lib/odoo/filestore/${db}; fi`,
+    );
+  });
+});
+
 describe("OdooLifecycle.runTests", () => {
   it("returns the odoo exit code and output tails without printing", async () => {
     const { ctx, recipe, run } = makeEnv();

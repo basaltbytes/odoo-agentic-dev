@@ -27,6 +27,21 @@ export const dropDatabaseSql = (databaseName: string): string =>
 export const createDatabaseSql = (databaseName: string): string =>
   `CREATE DATABASE "${databaseName}" OWNER "odoo"`;
 
+export const createFromTemplateSql = (databaseName: string, templateName: string): string =>
+  `CREATE DATABASE "${databaseName}" TEMPLATE "${templateName}"`;
+
+/** Replace `to`'s filestore with a copy of `from`'s (guarded: `from` may not exist). */
+export const copyFilestoreArgs = (odooService: string, from: string, to: string): Array<string> => [
+  "run",
+  "--rm",
+  "--no-deps",
+  "--entrypoint",
+  "/bin/sh",
+  odooService,
+  "-c",
+  `rm -rf /var/lib/odoo/filestore/${to} && if [ -d /var/lib/odoo/filestore/${from} ]; then cp -a /var/lib/odoo/filestore/${from} /var/lib/odoo/filestore/${to}; fi`,
+];
+
 export const removeFilestoreArgs = (odooService: string, databaseName: string): Array<string> => [
   "run",
   "--rm",
