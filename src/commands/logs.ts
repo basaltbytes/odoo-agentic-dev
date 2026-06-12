@@ -47,4 +47,4 @@ export const logsCommand = Command.make(
         follow: flags.follow,
       });
     }),
-);
+).pipe(Command.withDescription("tail service logs from this worktree's stack"));

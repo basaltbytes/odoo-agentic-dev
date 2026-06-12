@@ -149,4 +149,4 @@ export const linkSourceCommand = Command.make(
       });
       yield* Console.log(`Linked ${linkPath} -> resolved Odoo source`);
     }),
-);
+).pipe(Command.withDescription("symlink a local Odoo checkout for editor navigation"));

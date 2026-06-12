@@ -106,4 +106,4 @@ export const testCommand = Command.make(
         }
       }),
     ),
-);
+).pipe(Command.withDescription("run odoo tests against this worktree's database"));

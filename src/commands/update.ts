@@ -39,4 +39,4 @@ export const updateCommand = Command.make(
         yield* report.action("update-modules");
       }),
     ),
-);
+).pipe(Command.withDescription("run odoo -u for the given modules"));

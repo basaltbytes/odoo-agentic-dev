@@ -158,4 +158,4 @@ export const listCommand = Command.make(
         yield* Console.log(buildListTable(entries, new Date().toISOString()));
       }
     }),
-);
+).pipe(Command.withDescription("list registered environments and their Docker status"));

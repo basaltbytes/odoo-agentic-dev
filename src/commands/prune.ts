@@ -185,4 +185,4 @@ export const pruneCommand = Command.make(
       });
       yield* reportPrune(report, { yes: flags.yes, json: flags.json });
     }),
-);
+).pipe(Command.withDescription("remove environments whose branches are gone (dry-run by default)"));

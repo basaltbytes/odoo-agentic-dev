@@ -83,4 +83,4 @@ export const upCommand = Command.make(
         }
       }),
     ),
-);
+).pipe(Command.withDescription("start Odoo + companion apps on the derived ports"));

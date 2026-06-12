@@ -56,4 +56,4 @@ export const infoCommand = Command.make(
           : buildInfoText(ctx);
       yield* Console.log(output);
     }),
-);
+).pipe(Command.withDescription("print the derived context: database, ports, URLs, env"));

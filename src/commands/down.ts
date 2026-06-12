@@ -71,4 +71,4 @@ export const downCommand = Command.make(
         yield* finalizeDownState(ctx, flags);
       }),
     ),
-);
+).pipe(Command.withDescription("stop this worktree's stack (--volumes to also delete data)"));

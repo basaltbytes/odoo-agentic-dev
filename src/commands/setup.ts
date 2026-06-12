@@ -147,4 +147,4 @@ export const setupCommand = Command.make(
         yield* runSetup(recipe, ctx, flags, report);
       }),
     ),
-);
+).pipe(Command.withDescription("prepare the worktree: deps, image, database, template snapshot"));

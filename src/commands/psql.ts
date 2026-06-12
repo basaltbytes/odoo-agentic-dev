@@ -36,4 +36,4 @@ export const psqlCommand = Command.make(
       const extraArgs = [...flags.args, ...trailingOperands()];
       yield* runInteractivePassthrough(recipe, ctx, buildPsqlArgs(recipe, ctx, extraArgs));
     }),
-);
+).pipe(Command.withDescription("open psql against this worktree's database"));

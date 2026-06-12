@@ -290,4 +290,4 @@ export const doctorCommand = Command.make(
         process.exitCode = 1;
       }
     }),
-);
+).pipe(Command.withDescription("environment health report; exits 1 on hard failures"));

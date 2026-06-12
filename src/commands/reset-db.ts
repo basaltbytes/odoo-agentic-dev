@@ -132,4 +132,4 @@ export const resetDbCommand = Command.make(
         yield* report.say(`Done. Odoo URL: ${ctx.odooBaseUrl}/web?db=${ctx.databaseName}`);
       }),
     ),
-);
+).pipe(Command.withDescription("drop and re-initialize this worktree's database"));

@@ -64,4 +64,4 @@ export const shellCommand = Command.make(
       const { ctx, recipe } = yield* resolveContext(flags.config);
       yield* runInteractivePassthrough(recipe, ctx, buildShellArgs(recipe, ctx));
     }),
-);
+).pipe(Command.withDescription("open an odoo shell bound to this worktree's database"));
