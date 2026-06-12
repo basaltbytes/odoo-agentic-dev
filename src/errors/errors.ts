@@ -124,6 +124,14 @@ export class PortConflictError extends Data.TaggedError("PortConflictError")<{
   }
 }
 
+export class EjectError extends Data.TaggedError("EjectError")<{
+  readonly reason: string;
+}> {
+  override get message(): string {
+    return this.reason;
+  }
+}
+
 export type RuntimeError =
   | ConfigLoadError
   | ConfigValidationError
@@ -137,7 +145,8 @@ export type RuntimeError =
   | CompanionProcessError
   | SourceResolverError
   | StateError
-  | PortConflictError;
+  | PortConflictError
+  | EjectError;
 
 const RUNTIME_ERROR_TAGS: ReadonlySet<string> = new Set([
   "ConfigLoadError",
@@ -153,6 +162,7 @@ const RUNTIME_ERROR_TAGS: ReadonlySet<string> = new Set([
   "SourceResolverError",
   "StateError",
   "PortConflictError",
+  "EjectError",
 ]);
 
 export const isRuntimeError = (u: unknown): u is RuntimeError =>
@@ -241,6 +251,8 @@ export const renderError = (error: RuntimeError): string => {
         "Next: set ODOO_HTTP_PORT to a free port, or run `odoo-agentic-dev prune` to",
         "clean up environments you no longer need.",
       );
+    case "EjectError":
+      return lines(`Eject failed: ${error.reason}`);
   }
 };
 

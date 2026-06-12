@@ -51,6 +51,7 @@ describe.skipIf(!existsSync(CLI))("--help subcommand descriptions (run `pnpm bui
       "run",
       "compose",
       "worktree",
+      "eject",
     ]);
   });
 

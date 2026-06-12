@@ -409,13 +409,33 @@ With `--hook-json` (the WorktreeRemove hook contract) the `{worktree_path}` payl
 
 `info`, `list`, `doctor`, and `prune` have dedicated JSON shapes and keep stdout pure JSON (warnings go to stderr).
 
-The lifecycle commands — `setup`, `up`, `down`, `reset-db`, `update`, `test` — accept `--json` too: decorative output is suppressed and one final single-line JSON object is printed to stdout:
+The mutating lifecycle commands — `setup`, `reset-db`, `update`, `test`, `down`, and `up --detach` — accept `--json` too. In JSON mode **stdout carries exactly one JSON object** (a single final line) and **everything else — decorative progress, streamed compose/Odoo subprocess output, the test tail — goes to stderr**, so a parser can always read the report with `tail -n 1 | jq` (no other line ever reaches stdout).
+
+Every report shares this core:
 
 ```json
-{ "ok": true, "command": "reset-db", "database": "kl_feature_x", "composeProject": "kl_kl_feature_x", "odooUrl": "http://127.0.0.1:18119/web?db=kl_feature_x", "actions": ["restore-from-template"], "durationMs": 4180, "exitCode": 0 }
+{ "ok": true, "command": "reset-db", "database": "kl_feature_x", "composeProjectName": "kl_kl_feature_x", "odooHttpPort": 18119, "durationMs": 4180, "actions": ["restore-from-template"] }
 ```
 
-`actions` records what the command did (for `reset-db`/`setup` it includes `restore-from-template` or `full-init` + `snapshot-template`, so tooling can tell which reset path ran); `exitCode` appears when the command ran a child to completion (`test`). Streamed child output (image builds, Odoo logs) may still precede the report, so parse the **last line** of stdout (`tail -n 1 | jq`). On failure the object is emitted with `"ok": false` before the error is rendered on stderr.
+- `ok` — `true` on success; `false` on failure or (for `test`) a non-zero child exit.
+- `composeProject` and `odooUrl` are kept as back-compat aliases of `composeProjectName` / the derived web URL.
+- `actions` records what the command did, so tooling can tell which path ran.
+
+Per-command extras merged into the core:
+
+- **`setup` / `reset-db`** add `"mode": "template-restore" | "full-init"` and `"templateKey": "<recipe template hash>"`.
+- **`test`** adds `"exitCode"`, `"stdoutTail"`, and `"stderrTail"` (the last 200 lines of the Odoo run); `ok` mirrors `exitCode === 0`.
+- **`down`** adds `"volumesRemoved": boolean`.
+
+On failure the command still renders the error on stderr and exits 1, **and** stdout gets a final `ok:false` object carrying the typed error, so a parser never sees an empty stdout:
+
+```json
+{ "ok": false, "command": "reset-db", "database": "kl_e2e_demo", "composeProjectName": "kl_kl_e2e_demo", "odooHttpPort": 18119, "durationMs": 12, "actions": [], "error": { "tag": "SharedDatabaseProtectionError", "message": "refusing to touch shared database \"kl_e2e_demo\" (re-run reset-db with --allow-shared)" } }
+```
+
+`error.tag` is the underlying `TaggedError` `_tag`. Identity fields (`database`, `composeProjectName`, `odooHttpPort`) are `null` when the command fails before the context resolves.
+
+Attached `up` (without `--detach`) streams forever and never reaches a final line, so **`up --json` requires `--detach`** — it is rejected up front with a `ConfigValidationError` pointing at `--detach`. `up --detach --json` works.
 
 ## State Registry
 
@@ -483,6 +503,25 @@ type PostInitHook =
 ```
 
 Hook files resolve relative to the project root. Only `set-ir-config-parameter` commits automatically (it runs `env.cr.commit()` for you); `odoo-shell-file` and `odoo-shell-inline` scripts must call `env.cr.commit()` themselves or their changes are rolled back when the shell exits. Prefer `odoo-shell-file` and `set-ir-config-parameter`; inline code is harder to review.
+
+## Ejecting
+
+```bash
+odoo-agentic-dev eject            # all (Dockerfile + compose), prints the config patch
+odoo-agentic-dev eject compose    # just the compose file
+odoo-agentic-dev eject dockerfile # just the Dockerfile (needs an odoo.build block)
+odoo-agentic-dev eject --write-config   # also rewrite the config in place
+```
+
+`eject` converts generated infra into project-owned files: it writes the Dockerfile (`Dockerfile.odoo`) and/or the compose file (`docker-compose.worktree.yml`) into the repo as plain, editable files and points the config at them via the existing `odoo.dockerfile` / `compose.file` escape hatches. There are no new runtime concepts — eject just automates stepping onto hatches the CLI already supports.
+
+**When to eject:** you need custom services the generated compose does not model (extra containers, exotic networking), deliberate LAN exposure, or your team simply prefers infra it can see and edit in the repo.
+
+**What you keep.** Everything that makes the CLI worth using still works against an ejected stack: database/port derivation, the full context env injection (`compose.file` consumers run with the same variables `info --env` prints, so the ejected compose's `${ODOO_DATABASE:?}` / `${ODOO_HTTP_PORT:?}` interpolations always resolve), the worktree lifecycle (`setup`/`up`/`down`/`reset-db`), and the safety guards (shared-database protection, loopback-only binding, unsafe-name rejection). The ejected files are **portable**: the compose render emits interpolations instead of the current worktree's baked literals, so one file serves every worktree.
+
+**What you give up.** Config-driven infra upgrades. Once ejected, changes to `odoo.build` no longer regenerate your Dockerfile, and improvements to the generated compose file in future CLI releases no longer reach you — those files are yours to maintain.
+
+By default eject prints a ready-to-apply config patch and changes nothing else; pass a path to override the destination (`--dockerfile-out` / `--compose-out`), `--force` to overwrite an existing file, and `--json` for a machine-readable `{ ok, written, configPatch, configWritten }` object. `--write-config` rewrites the config in place and discards comments, so it refuses a commented file without `--force`. `eject dockerfile` refuses a stock-image config — there is nothing to eject; add an `odoo.build` block first, or eject only the compose file.
 
 ## Development
 
