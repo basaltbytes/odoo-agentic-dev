@@ -22,6 +22,7 @@ import { psqlCommand } from "./commands/psql.js";
 import { runCommand } from "./commands/run.js";
 import { composeCommand } from "./commands/compose.js";
 import { worktreeCommand } from "./commands/worktree.js";
+import { readFileSync } from "node:fs";
 import { CommandRunnerLive } from "./platform/command-runner.js";
 import { GitLive } from "./platform/git.js";
 import { DockerComposeLive } from "./platform/docker-compose.js";
@@ -66,7 +67,12 @@ const services = Layer.mergeAll(
   Layer.provideMerge(NodeServices.layer),
 );
 
-const program = Command.runWith(root, { version: "0.1.0-beta.1" })(process.argv.slice(2)).pipe(
+// ../package.json resolves from both dist/cli.js and src/cli.ts — single version source
+const { version } = JSON.parse(
+  readFileSync(new URL("../package.json", import.meta.url), "utf8"),
+) as { version: string };
+
+const program = Command.runWith(root, { version })(process.argv.slice(2)).pipe(
   Effect.provide(services),
   Effect.catch((error) =>
     Effect.gen(function* () {
