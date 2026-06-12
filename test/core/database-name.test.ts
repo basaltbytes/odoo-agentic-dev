@@ -102,6 +102,13 @@ describe("deriveDatabaseName", () => {
     );
   });
 
+  // bash parity: an all-symbols seed becomes "worktree", never the grotesque "<prefix>_"
+  it("a seed that sanitizes to nothing becomes <prefix>_worktree", () => {
+    expect(
+      runSyncSuccess(deriveDatabaseName({ ...base, branch: "***", worktreeName: "---" })),
+    ).toBe("kl_worktree");
+  });
+
   it("truncates long derived names to 58 chars (template-suffix headroom) with a stable hash", () => {
     const branch = "feature/" + "very-long-segment-".repeat(8);
     const name = runSyncSuccess(deriveDatabaseName({ ...base, branch }));

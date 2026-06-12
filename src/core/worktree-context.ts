@@ -26,11 +26,17 @@ export type WorktreeContext = {
   readonly env: Record<string, string>;
 };
 
+/** Shell `[[ -n ]]` semantics: an empty-string env var counts as unset. */
+const envValue = (env: Record<string, string | undefined>, key: string): string | undefined => {
+  const value = env[key];
+  return value === undefined || value === "" ? undefined : value;
+};
+
 const resolveEnvDatabase = (
   env: Record<string, string | undefined>,
 ): Effect.Effect<string | undefined, ConfigValidationError> => {
-  const primary = env["ODOO_DATABASE"];
-  const alias = env["E2E_ODOO_DB"];
+  const primary = envValue(env, "ODOO_DATABASE");
+  const alias = envValue(env, "E2E_ODOO_DB");
   if (primary !== undefined && alias !== undefined && primary !== alias) {
     return Effect.fail(
       new ConfigValidationError({
@@ -56,9 +62,10 @@ export const buildWorktreeContext = (options: {
     const { env, git, recipe, rootDir } = options;
 
     const branch = git._tag === "Branch" ? git.branch : undefined;
-    const worktreeName = env["ODOO_WORKTREE_NAME"] ?? branch ?? fallbackWorktreeName(rootDir);
+    const nameOverride = envValue(env, "ODOO_WORKTREE_NAME");
+    const worktreeName = nameOverride ?? branch ?? fallbackWorktreeName(rootDir);
     // an explicit ODOO_WORKTREE_NAME also redefines what "branch" means for naming
-    const effectiveBranch = env["ODOO_WORKTREE_NAME"] ?? branch;
+    const effectiveBranch = nameOverride ?? branch;
 
     const envDatabase = yield* resolveEnvDatabase(env);
     const databaseName = yield* deriveDatabaseName({
@@ -75,7 +82,7 @@ export const buildWorktreeContext = (options: {
       databaseName,
       ports: recipe.ports,
       companionApps: recipe.companionApps,
-      envHttpPort: env["ODOO_HTTP_PORT"],
+      envHttpPort: envValue(env, "ODOO_HTTP_PORT"),
     });
 
     const composeProjectName = yield* deriveComposeProjectName(recipe.project.id, databaseName);

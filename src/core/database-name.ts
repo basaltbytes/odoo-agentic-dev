@@ -68,6 +68,8 @@ export const deriveDatabaseName = (options: {
   if (segments.length > 1 && prefixes.includes(segments[0]!.toLowerCase())) segments.shift();
   let body = sanitizeNamePart(segments.join("/"));
   if (body.length === 0) body = sanitizeNamePart(options.worktreeName);
+  // bash parity: a name that sanitizes to nothing becomes "worktree", never "<prefix>_"
+  if (body.length === 0) body = "worktree";
 
   const prefixed =
     body === options.dbPrefix || body.startsWith(`${options.dbPrefix}_`)

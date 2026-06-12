@@ -40,7 +40,11 @@ export const loadRecipe = (options: {
   ConfigLoadError | ConfigValidationError
 > =>
   Effect.gen(function* () {
-    const override = options.explicitPath ?? options.env["ODOO_WORKTREE_CONFIG"];
+    // shell `[[ -n ]]` semantics: an empty-string env override counts as unset
+    const envOverride = options.env["ODOO_WORKTREE_CONFIG"];
+    const override =
+      options.explicitPath ??
+      (envOverride === undefined || envOverride === "" ? undefined : envOverride);
     const path =
       override !== undefined
         ? isAbsolute(override)

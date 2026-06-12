@@ -146,6 +146,21 @@ describe("buildWorktreeContext", () => {
     ).toBeInstanceOf(ConfigValidationError);
   });
 
+  // bash `[[ -n ]]` parity: empty-string env vars behave as unset — agents and
+  // CI matrices export empties all the time
+  it("empty-string env overrides count as unset", () => {
+    const ctx = runSyncSuccess(
+      build(onBranch("main"), { ODOO_WORKTREE_NAME: "", ODOO_DATABASE: "", ODOO_HTTP_PORT: "" }),
+    );
+    expect(ctx.worktreeName).toBe("main");
+    expect(ctx.databaseName).toBe("kl_e2e_demo"); // shared mapping still applies
+    // empty ODOO_DATABASE + set E2E_ODOO_DB is not a disagreement
+    const aliasOnly = runSyncSuccess(
+      build(onBranch("main"), { ODOO_DATABASE: "", E2E_ODOO_DB: "kl_pinned" }),
+    );
+    expect(aliasOnly.databaseName).toBe("kl_pinned");
+  });
+
   it("detached and non-repo states use a deterministic fallback name", () => {
     const detached = runSyncSuccess(build({ _tag: "Detached" }));
     const again = runSyncSuccess(build({ _tag: "Detached" }));
