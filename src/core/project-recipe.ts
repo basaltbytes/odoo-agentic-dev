@@ -67,6 +67,8 @@ export type OdooImageBuildConfig = {
   /** requirements files copied into the image and `pip install -r`-ed */
   readonly pipRequirements?: ReadonlyArray<string>;
   readonly copy?: ReadonlyArray<{ readonly from: string; readonly to: string }>;
+  /** raw RUN lines appended after the apt/pip layers (escape hatch, runs as root) */
+  readonly run?: ReadonlyArray<string>;
 };
 
 /** Default in-image Odoo addons path (the official odoo image layout). */
@@ -143,6 +145,7 @@ export type OdooImageBuild = {
   readonly pipPackages: ReadonlyArray<string>;
   readonly pipRequirements: ReadonlyArray<string>;
   readonly copy: ReadonlyArray<{ readonly from: string; readonly to: string }>;
+  readonly run: ReadonlyArray<string>;
 };
 
 /** Normalized config: every default applied, optionals resolved. */

@@ -91,6 +91,7 @@ export default defineConfig({
       pipRequirements: ["backend/requirements.txt"],
       pipPackages: ["requests"],
       copy: [{ from: "backend/sql-script", to: "/opt/acme/sql-script" }],
+      run: ["playwright install --with-deps chromium-headless-shell"], // raw RUN escape hatch (as root)
     },
     dockerfile: "Dockerfile.odoo",    // default: none — hand-written escape hatch, mutually
                                       //   exclusive with `build`; without either, the stock

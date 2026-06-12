@@ -68,6 +68,7 @@ const ConfigInputSchema = Schema.Struct({
         copy: Schema.optional(
           Schema.Array(Schema.Struct({ from: Schema.String, to: Schema.String })),
         ),
+        run: Schema.optional(Schema.Array(Schema.String)),
       }),
     ),
     dev: Schema.optional(Schema.Union([Schema.String, Schema.Literal(false)])),
@@ -203,10 +204,11 @@ export const normalizeConfig = (
       (build.aptPackages?.length ?? 0) > 0 ||
       (build.pipPackages?.length ?? 0) > 0 ||
       (build.pipRequirements?.length ?? 0) > 0 ||
-      (build.copy?.length ?? 0) > 0;
+      (build.copy?.length ?? 0) > 0 ||
+      (build.run?.length ?? 0) > 0;
     if (!hasContent) {
       issues.push(
-        "odoo.build must declare at least one of aptPackages, pipPackages, pipRequirements, copy",
+        "odoo.build must declare at least one of aptPackages, pipPackages, pipRequirements, copy, run",
       );
     }
     // docker build context = project root, so sources can never escape it
@@ -251,6 +253,7 @@ export const normalizeConfig = (
               pipPackages: input.odoo.build.pipPackages ?? [],
               pipRequirements: input.odoo.build.pipRequirements ?? [],
               copy: input.odoo.build.copy ?? [],
+              run: input.odoo.build.run ?? [],
             },
       dev: input.odoo.dev ?? "xml,reload",
       baseAddonsPath: input.odoo.baseAddonsPath ?? DEFAULT_BASE_ADDONS_PATH,

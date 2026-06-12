@@ -42,6 +42,10 @@ export const renderDockerfile = (version: string, build: OdooImageBuild): string
     );
   }
 
+  for (const step of build.run) {
+    lines.push(`RUN ${step}`);
+  }
+
   lines.push("USER odoo");
   return lines.join("\n") + "\n";
 };

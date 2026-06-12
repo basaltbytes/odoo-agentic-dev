@@ -187,6 +187,7 @@ describe("normalizeConfig", () => {
       pipPackages: [],
       pipRequirements: [],
       copy: [],
+      run: [],
     });
   });
 

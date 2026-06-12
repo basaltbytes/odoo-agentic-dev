@@ -86,6 +86,7 @@ describe("ejectedDockerfileHeader / renderEjectedDockerfile", () => {
       pipPackages: ["requests"],
       pipRequirements: [],
       copy: [],
+      run: [],
     };
     const rendered = renderEjectedDockerfile("18.0", "9.9.9", build);
     expect(rendered.split("\n")[0]).toBe(

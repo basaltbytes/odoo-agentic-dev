@@ -7,6 +7,7 @@ const full: OdooImageBuild = {
   pipPackages: ["requests"],
   pipRequirements: ["backend/requirements.txt"],
   copy: [{ from: "backend/sql-script", to: "/opt/kriss-laure/sql-script" }],
+  run: ["playwright install chromium-headless-shell", "ln -s /a /b"],
 };
 
 describe("renderDockerfile", () => {
@@ -28,12 +29,24 @@ describe("renderDockerfile", () => {
     expect(lines.at(-1)).toBe("USER odoo");
   });
 
+  it("emits raw run steps in order, after the pip layer and before USER odoo", () => {
+    const text = renderDockerfile("18.0", full);
+    const lines = text.trimEnd().split("\n");
+    const pip = lines.findIndex((l) => l.includes("pip install"));
+    const first = lines.indexOf("RUN playwright install chromium-headless-shell");
+    const second = lines.indexOf("RUN ln -s /a /b");
+    expect(first).toBeGreaterThan(pip);
+    expect(second).toBe(first + 1);
+    expect(lines.indexOf("USER odoo")).toBeGreaterThan(second);
+  });
+
   it("omits the apt layer without aptPackages and the pip layer without pip inputs", () => {
     const copyOnly = renderDockerfile("18.0", {
       aptPackages: [],
       pipPackages: [],
       pipRequirements: [],
       copy: [{ from: "scripts", to: "/opt/scripts" }],
+      run: [],
     });
     expect(copyOnly).not.toContain("apt-get");
     expect(copyOnly).not.toContain("pip install");
