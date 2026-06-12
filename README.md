@@ -48,6 +48,10 @@ pnpm exec odoo-agentic-dev up      # start Odoo + companion apps
 pnpm exec odoo-agentic-dev info    # inspect the derived context at any time
 ```
 
+## For Coding Agents
+
+The CLI is designed to be driven by coding agents: deterministic derivation, no interactive prompts, meaningful exit codes, `--json` everywhere, and guard rails on destructive actions. To make your agents use it well, paste the block in [docs/AGENTS-SNIPPET.md](docs/AGENTS-SNIPPET.md) into your project's `CLAUDE.md` / `AGENTS.md` — it covers the daily commands, the env contract (`run -- <cmd>` instead of hand-assembled variables), and the rule that Docker Compose is only reached through `odoo-agentic-dev compose --`.
+
 ## Configuration Reference
 
 Every field, with defaults shown in comments. Only `project.id`, `project.dbPrefix`, `odoo.version`, and `odoo.addons` are required — a good config states only what deviates from the defaults.
