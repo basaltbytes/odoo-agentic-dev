@@ -94,6 +94,12 @@ export type OdooAgenticDevConfigInput = {
     /** escape hatch: project-supplied compose file instead of the generated one */
     readonly file?: string;
   };
+  readonly worktree?: {
+    /** project-root files copied into a fresh worktree when they exist (e.g. ".env.e2e") */
+    readonly copyFiles?: ReadonlyArray<string>;
+    /** prefix for the branch `worktree create` makes (default "worktree-") */
+    readonly branchPrefix?: string;
+  };
   readonly test?: {
     /** profile name → extra odoo CLI args, e.g. { payment: ["--test-tags", "payment"] } */
     readonly profiles?: Readonly<Record<string, ReadonlyArray<string>>>;
@@ -144,6 +150,10 @@ export type OdooAgenticDevConfig = {
     readonly packageManagers: ReadonlyArray<PackageManagerStep>;
   };
   readonly compose: { readonly file: string | null };
+  readonly worktree: {
+    readonly copyFiles: ReadonlyArray<string>;
+    readonly branchPrefix: string;
+  };
   readonly test: { readonly profiles: Readonly<Record<string, ReadonlyArray<string>>> };
   readonly envAliases: Readonly<Record<string, string>>;
   readonly companionApps: ReadonlyArray<CompanionAppConfig>;

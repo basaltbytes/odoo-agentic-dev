@@ -135,6 +135,34 @@ export default {
     expect(parsed.ok).toBe(result.status === 0);
   });
 
+  it("worktree nests two subcommand levels (create/remove reachable under worktree)", () => {
+    const out = run(["worktree", "--help"]);
+    expect(out).toContain("create");
+    expect(out).toContain("remove");
+    const createHelp = run(["worktree", "create", "--help"]);
+    expect(createHelp).toContain("--hook-json");
+    expect(createHelp).toContain("--base");
+  });
+
+  it("worktree create without a name fails with the validation error", () => {
+    const result = spawn(["worktree", "create"]);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("requires a <name> argument");
+  });
+
+  // the WorktreeRemove hook contract: it CANNOT block, so even garbage stdin
+  // must be swallowed (logged to stderr) and the process must exit 0
+  it("worktree remove --hook-json always exits 0, even on an unparseable payload", () => {
+    const result = spawnSync("node", [CLI, "worktree", "remove", "--hook-json"], {
+      cwd: dir,
+      encoding: "utf8",
+      input: "definitely not json",
+      env: { ...process.env, ODOO_AGENTIC_DEV_STATE_DB: join(dir, "state-wt-remove.db") },
+    });
+    expect(result.status).toBe(0);
+    expect(result.stderr).toContain("cannot block");
+  });
+
   it("bare invocation prints help without the ShowHelp noise line and exits nonzero", () => {
     let status = 0;
     let stdout = "";

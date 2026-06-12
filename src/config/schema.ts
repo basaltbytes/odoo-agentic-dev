@@ -84,6 +84,12 @@ const ConfigInputSchema = Schema.Struct({
     }),
   ),
   compose: Schema.optional(Schema.Struct({ file: Schema.optional(Schema.String) })),
+  worktree: Schema.optional(
+    Schema.Struct({
+      copyFiles: Schema.optional(Schema.Array(Schema.String)),
+      branchPrefix: Schema.optional(Schema.String),
+    }),
+  ),
   test: Schema.optional(
     Schema.Struct({
       profiles: Schema.optional(Schema.Record(Schema.String, Schema.Array(Schema.String))),
@@ -209,6 +215,10 @@ export const normalizeConfig = (
       packageManagers: input.setup?.packageManagers ?? [],
     },
     compose: { file: input.compose?.file ?? null },
+    worktree: {
+      copyFiles: input.worktree?.copyFiles ?? [],
+      branchPrefix: input.worktree?.branchPrefix ?? "worktree-",
+    },
     test: { profiles: input.test?.profiles ?? {} },
     envAliases: input.envAliases ?? {},
     companionApps: input.companionApps ?? [],

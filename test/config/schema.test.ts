@@ -87,6 +87,32 @@ describe("normalizeConfig", () => {
     ).toBeInstanceOf(ConfigValidationError);
   });
 
+  it("defaults the worktree section to no copied files and the worktree- branch prefix", () => {
+    expect(runSyncSuccess(normalized(minimal)).worktree).toEqual({
+      copyFiles: [],
+      branchPrefix: "worktree-",
+    });
+  });
+
+  it("honors explicit worktree settings", () => {
+    const cfg = runSyncSuccess(
+      normalized({
+        ...minimal,
+        worktree: { copyFiles: [".env.e2e", "conf/local.env"], branchPrefix: "wt/" },
+      }),
+    );
+    expect(cfg.worktree).toEqual({
+      copyFiles: [".env.e2e", "conf/local.env"],
+      branchPrefix: "wt/",
+    });
+  });
+
+  it("rejects a malformed worktree section", () => {
+    expect(
+      runSyncFailure(validateConfigInput({ ...minimal, worktree: { copyFiles: ".env.e2e" } })),
+    ).toBeInstanceOf(ConfigValidationError);
+  });
+
   it("honors explicit cleanup settings", () => {
     const cfg = runSyncSuccess(normalized({ ...minimal, cleanup: { maxAgeDays: 7, auto: true } }));
     expect(cfg.cleanup).toEqual({ maxAgeDays: 7, auto: true });

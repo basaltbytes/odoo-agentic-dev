@@ -21,6 +21,7 @@ import { shellCommand } from "./commands/shell.js";
 import { psqlCommand } from "./commands/psql.js";
 import { runCommand } from "./commands/run.js";
 import { composeCommand } from "./commands/compose.js";
+import { worktreeCommand } from "./commands/worktree.js";
 import { CommandRunnerLive } from "./platform/command-runner.js";
 import { GitLive } from "./platform/git.js";
 import { DockerComposeLive } from "./platform/docker-compose.js";
@@ -49,6 +50,7 @@ const root = Command.make("odoo-agentic-dev").pipe(
     psqlCommand,
     runCommand,
     composeCommand,
+    worktreeCommand,
   ]),
 );
 
