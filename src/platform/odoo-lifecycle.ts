@@ -6,6 +6,7 @@ import type { ComposeCommandError, RuntimeError } from "../errors/errors.js";
 import type { OdooAgenticDevConfig } from "../core/project-recipe.js";
 import type { WorktreeContext } from "../core/worktree-context.js";
 import {
+  containerAddonsPath,
   copyFilestoreArgs,
   createDatabaseSql,
   createFromTemplateSql,
@@ -89,7 +90,12 @@ export const OdooLifecycleLive = Layer.effect(
       ctx: WorktreeContext,
       ref: ComposeRef,
       code: string,
-    ) => compose.run(ref, odooShellArgs(recipe.odoo.serviceName, ctx.databaseName), code);
+    ) =>
+      compose.run(
+        ref,
+        odooShellArgs(recipe.odoo.serviceName, ctx.databaseName, containerAddonsPath(recipe)),
+        code,
+      );
 
     return {
       resetDatabase: (recipe, ctx, options) =>
@@ -104,6 +110,7 @@ export const OdooLifecycleLive = Layer.effect(
           const initArgs = odooInitArgs(
             recipe.odoo.serviceName,
             ctx.databaseName,
+            containerAddonsPath(recipe),
             options.modules ?? recipe.database.initialModules,
             options.withoutDemo ?? recipe.database.withoutDemo,
           );
@@ -184,7 +191,15 @@ export const OdooLifecycleLive = Layer.effect(
           yield* ensureDbReady(recipe, ref);
           yield* compose.stream(ref, ["stop", recipe.odoo.serviceName]);
           yield* compose
-            .stream(ref, odooUpdateArgs(recipe.odoo.serviceName, ctx.databaseName, modules))
+            .stream(
+              ref,
+              odooUpdateArgs(
+                recipe.odoo.serviceName,
+                ctx.databaseName,
+                containerAddonsPath(recipe),
+                modules,
+              ),
+            )
             .pipe(Effect.mapError(toOdooError));
           if (options.restart) {
             yield* compose.stream(ref, ["up", "-d", recipe.odoo.serviceName]);
@@ -197,7 +212,12 @@ export const OdooLifecycleLive = Layer.effect(
           yield* ensureDbReady(recipe, ref);
           const result = yield* compose.tryRun(
             ref,
-            odooTestArgs(recipe.odoo.serviceName, ctx.databaseName, options),
+            odooTestArgs(
+              recipe.odoo.serviceName,
+              ctx.databaseName,
+              containerAddonsPath(recipe),
+              options,
+            ),
           );
           return {
             exitCode: result.exitCode,

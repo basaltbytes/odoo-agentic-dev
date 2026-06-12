@@ -1,6 +1,7 @@
 import { Effect, Schema } from "effect";
 import { ConfigValidationError } from "../errors/errors.js";
 import type { OdooAgenticDevConfig, OdooAgenticDevConfigInput } from "../core/project-recipe.js";
+import { DEFAULT_BASE_ADDONS_PATH } from "../core/project-recipe.js";
 import { DEFAULT_STRIP_BRANCH_PREFIXES } from "../core/database-name.js";
 
 const AddonMountSchema = Schema.Struct({
@@ -59,6 +60,18 @@ const ConfigInputSchema = Schema.Struct({
     configFile: Schema.optional(Schema.String),
     dockerfile: Schema.optional(Schema.String),
     imageName: Schema.optional(Schema.String),
+    build: Schema.optional(
+      Schema.Struct({
+        aptPackages: Schema.optional(Schema.Array(Schema.String)),
+        pipPackages: Schema.optional(Schema.Array(Schema.String)),
+        pipRequirements: Schema.optional(Schema.Array(Schema.String)),
+        copy: Schema.optional(
+          Schema.Array(Schema.Struct({ from: Schema.String, to: Schema.String })),
+        ),
+      }),
+    ),
+    dev: Schema.optional(Schema.Union([Schema.String, Schema.Literal(false)])),
+    baseAddonsPath: Schema.optional(Schema.String),
     addons: Schema.Array(AddonMountSchema),
     source: Schema.optional(Schema.String),
   }),
@@ -181,6 +194,34 @@ export const normalizeConfig = (
     issues.push("project.sharedBranches is set but project.sharedDatabase is missing");
   }
 
+  if (input.odoo.build !== undefined) {
+    if (input.odoo.dockerfile !== undefined) {
+      issues.push("odoo.build and odoo.dockerfile are mutually exclusive — pick one");
+    }
+    const build = input.odoo.build;
+    const hasContent =
+      (build.aptPackages?.length ?? 0) > 0 ||
+      (build.pipPackages?.length ?? 0) > 0 ||
+      (build.pipRequirements?.length ?? 0) > 0 ||
+      (build.copy?.length ?? 0) > 0;
+    if (!hasContent) {
+      issues.push(
+        "odoo.build must declare at least one of aptPackages, pipPackages, pipRequirements, copy",
+      );
+    }
+    // docker build context = project root, so sources can never escape it
+    for (const source of [
+      ...(build.pipRequirements ?? []),
+      ...(build.copy ?? []).map((entry) => entry.from),
+    ]) {
+      if (source.startsWith("/") || source === ".." || source.startsWith("../")) {
+        issues.push(
+          `odoo.build path "${source}" must be inside the repo (it is copied into the docker build context)`,
+        );
+      }
+    }
+  }
+
   if (issues.length > 0) return Effect.fail(new ConfigValidationError({ issues }));
 
   return Effect.succeed({
@@ -202,6 +243,17 @@ export const normalizeConfig = (
       configFile: input.odoo.configFile ?? null,
       dockerfile: input.odoo.dockerfile ?? null,
       imageName: input.odoo.imageName ?? null,
+      build:
+        input.odoo.build === undefined
+          ? null
+          : {
+              aptPackages: input.odoo.build.aptPackages ?? [],
+              pipPackages: input.odoo.build.pipPackages ?? [],
+              pipRequirements: input.odoo.build.pipRequirements ?? [],
+              copy: input.odoo.build.copy ?? [],
+            },
+      dev: input.odoo.dev ?? "xml,reload",
+      baseAddonsPath: input.odoo.baseAddonsPath ?? DEFAULT_BASE_ADDONS_PATH,
       addons: input.odoo.addons,
       source: input.odoo.source ?? null,
     },

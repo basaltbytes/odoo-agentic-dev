@@ -79,9 +79,22 @@ export default defineConfig({
     serviceName: "odoo",              // default — compose service to exec/log against
     databaseServiceName: "db",        // default
     postgresImage: "postgres:16",     // default
-    dockerfile: "Dockerfile.odoo",    // default: none — without it the stock `odoo:<version>` image runs
-    imageName: "acme-odoo:dev",       // default: none — tag for the dockerfile build
+    build: {                          // default: none — the CLI GENERATES a Dockerfile from this
+      aptPackages: ["tesseract-ocr"], //   (FROM odoo:<version>, one apt layer, one pip layer, COPYs)
+      pipRequirements: ["backend/requirements.txt"],
+      pipPackages: ["requests"],
+      copy: [{ from: "backend/sql-script", to: "/opt/acme/sql-script" }],
+    },
+    dockerfile: "Dockerfile.odoo",    // default: none — hand-written escape hatch, mutually
+                                      //   exclusive with `build`; without either, the stock
+                                      //   `odoo:<version>` image runs as-is
+    imageName: "acme-odoo:dev",       // default: none — tag for the built image
+    dev: "xml,reload",                // default — `--dev=` flags for the served Odoo; false disables
+    baseAddonsPath:                   // default — in-image addons dir, prepended to every
+      "/usr/lib/python3/dist-packages/odoo/addons", //   --addons-path the CLI passes
     configFile: "config/odoo.conf",   // default: none — mounted read-only at /etc/odoo/odoo.conf
+                                      //   (rarely needed: db connection, --database, --addons-path,
+                                      //   and --no-database-list are all handled by the CLI)
     source: "../odoo",                // default: none — local Odoo checkout for `link-source`
     addons: [                         // required, at least one mount (host path relative to repo root)
       { host: "addons", container: "/mnt/extra-addons/custom" },
@@ -112,6 +125,9 @@ export default defineConfig({
   compose: {
     file: "docker-compose.worktree.yml", // default: none — escape hatch replacing the generated
                                          //   compose file; it can interpolate ${ODOO_DATABASE:?} etc.
+                                         //   Rarely needed: the generated file already builds the
+                                         //   image, serves only the derived DB, sets --addons-path,
+                                         //   dev mode, restart policies, and injects the context env.
   },
 
   worktree: {

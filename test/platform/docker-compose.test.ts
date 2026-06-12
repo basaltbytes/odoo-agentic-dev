@@ -95,6 +95,30 @@ describe("DockerComposeLive", () => {
     expect(readFileSync(ref.composeFile, "utf8")).toContain("pg_isready");
   });
 
+  it("prepareComposeFile also writes the generated Dockerfile when odoo.build is set", async () => {
+    const { ctx, rootDir, run } = makeEnv();
+    const recipe = makeRecipe({
+      project: { id: "fixture", dbPrefix: "fx" },
+      odoo: {
+        version: "18.0",
+        build: { pipPackages: ["requests"] },
+        addons: [{ host: "addons", container: "/mnt/c" }],
+      },
+    });
+    await run(
+      Effect.gen(function* () {
+        const dc = yield* DockerCompose;
+        return yield* dc.prepareComposeFile(recipe, ctx);
+      }),
+    );
+    const dockerfile = readFileSync(
+      join(rootDir, ".odoo-agentic-dev", "Dockerfile.generated"),
+      "utf8",
+    );
+    expect(dockerfile).toContain("FROM odoo:18.0");
+    expect(dockerfile).toContain("pip install --break-system-packages --ignore-installed requests");
+  });
+
   it("prepareComposeFile honors the project-supplied escape hatch", async () => {
     const { ctx, rootDir, run } = makeEnv();
     const recipe = makeRecipe({

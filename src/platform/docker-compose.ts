@@ -9,6 +9,7 @@ import {
   GENERATED_COMPOSE_RELATIVE_PATH,
   renderComposeYaml,
 } from "../core/compose-model.js";
+import { GENERATED_DOCKERFILE_RELATIVE_PATH, renderDockerfile } from "../core/dockerfile-model.js";
 import { CommandRunner } from "./command-runner.js";
 import type { ExecResult } from "./command-runner.js";
 
@@ -324,6 +325,12 @@ export const DockerComposeLive = Layer.effect(
             try: () => {
               mkdirSync(dirname(file), { recursive: true });
               writeFileSync(file, renderComposeYaml(buildComposeModel(recipe, ctx)));
+              if (recipe.odoo.build !== null) {
+                writeFileSync(
+                  join(ctx.rootDir, GENERATED_DOCKERFILE_RELATIVE_PATH),
+                  renderDockerfile(recipe.odoo.version, recipe.odoo.build),
+                );
+              }
             },
             catch: (cause) =>
               new ComposeCommandError({

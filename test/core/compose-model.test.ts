@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
 import { buildComposeModel, renderComposeYaml } from "../../src/core/compose-model.js";
+import { GENERATED_DOCKERFILE_RELATIVE_PATH } from "../../src/core/dockerfile-model.js";
 import { makeCtx, makeRecipe } from "../helpers.js";
 
 const recipe = makeRecipe({
@@ -30,6 +31,22 @@ describe("buildComposeModel", () => {
     expect(odoo["image"]).toBe("krisslaure-odoo-agentic-dev");
   });
 
+  it("points the build at the generated Dockerfile when odoo.build is configured", () => {
+    const built = makeRecipe({
+      project: { id: "x", dbPrefix: "x" },
+      odoo: {
+        version: "18.0",
+        build: { pipPackages: ["requests"] },
+        addons: [{ host: "addons", container: "/mnt/c" }],
+      },
+    });
+    const m = buildComposeModel(built, makeCtx(built, "b"));
+    expect((m.services["odoo"] as Record<string, unknown>)["build"]).toEqual({
+      context: ".",
+      dockerfile: GENERATED_DOCKERFILE_RELATIVE_PATH,
+    });
+  });
+
   it("falls back to the official image without a dockerfile", () => {
     const plain = makeRecipe({
       project: { id: "x", dbPrefix: "x" },
@@ -38,6 +55,40 @@ describe("buildComposeModel", () => {
     const plainCtx = makeCtx(plain, "b");
     const m = buildComposeModel(plain, plainCtx);
     expect((m.services["odoo"] as Record<string, unknown>)["image"]).toBe("odoo:18.0");
+  });
+
+  it("serves exactly the derived database with addons path and dev mode", () => {
+    const odoo = model.services["odoo"] as Record<string, any>;
+    expect(odoo.command).toEqual([
+      "odoo",
+      `--database=${ctx.databaseName}`,
+      "--no-database-list",
+      "--addons-path=/usr/lib/python3/dist-packages/odoo/addons,/mnt/extra-addons/Custom,/mnt/extra-addons/OCA",
+      "--dev=xml,reload",
+    ]);
+  });
+
+  it("omits --dev when odoo.dev is false", () => {
+    const noDev = makeRecipe({
+      project: { id: "x", dbPrefix: "x" },
+      odoo: { version: "18.0", dev: false, addons: [{ host: "addons", container: "/mnt/c" }] },
+    });
+    const m = buildComposeModel(noDev, makeCtx(noDev, "b"));
+    const command = (m.services["odoo"] as Record<string, any>).command as Array<string>;
+    expect(command.some((arg) => arg.startsWith("--dev"))).toBe(false);
+  });
+
+  it("injects the full context env into the odoo service", () => {
+    const env = (model.services["odoo"] as Record<string, any>).environment;
+    expect(env.HOST).toBe("db");
+    expect(env.ODOO_DATABASE).toBe(ctx.databaseName);
+    expect(env.ODOO_BASE_URL).toBe(ctx.odooBaseUrl);
+    expect(env.ODOO_HTTP_PORT).toBe(String(ctx.odooHttpPort));
+  });
+
+  it("restarts both services unless stopped", () => {
+    expect((model.services["odoo"] as Record<string, any>).restart).toBe("unless-stopped");
+    expect((model.services["db"] as Record<string, any>).restart).toBe("unless-stopped");
   });
 
   it("maps the derived port on loopback, addon mounts, config mount, and healthy-db dependency", () => {

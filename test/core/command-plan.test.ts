@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  containerAddonsPath,
   copyFilestoreArgs,
   createDatabaseSql,
   createFromTemplateSql,
@@ -14,6 +15,9 @@ import {
   setIrConfigParameterCode,
   terminateSessionsSql,
 } from "../../src/core/command-plan.js";
+import { makeRecipe } from "../helpers.js";
+
+const ADDONS = "/usr/lib/python3/dist-packages/odoo/addons,/mnt/c";
 
 describe("sql/argv builders", () => {
   it("psqlArgs targets the db service with ON_ERROR_STOP", () => {
@@ -75,25 +79,27 @@ describe("sql/argv builders", () => {
   });
 
   it("init installs modules (base fallback) honoring withoutDemo", () => {
-    expect(odooInitArgs("odoo", "kl_x", ["KL_setup", "KL_pay"], "all")).toEqual([
+    expect(odooInitArgs("odoo", "kl_x", ADDONS, ["KL_setup", "KL_pay"], "all")).toEqual([
       "run",
       "--rm",
       "odoo",
       "odoo",
       "-d",
       "kl_x",
+      `--addons-path=${ADDONS}`,
       "-i",
       "KL_setup,KL_pay",
       "--without-demo=all",
       "--stop-after-init",
     ]);
-    expect(odooInitArgs("odoo", "kl_x", [], false)).toEqual([
+    expect(odooInitArgs("odoo", "kl_x", ADDONS, [], false)).toEqual([
       "run",
       "--rm",
       "odoo",
       "odoo",
       "-d",
       "kl_x",
+      `--addons-path=${ADDONS}`,
       "-i",
       "base",
       "--stop-after-init",
@@ -101,18 +107,19 @@ describe("sql/argv builders", () => {
   });
 
   it("update and shell argv", () => {
-    expect(odooUpdateArgs("odoo", "kl_x", ["KL_base", "KL_sale"])).toEqual([
+    expect(odooUpdateArgs("odoo", "kl_x", ADDONS, ["KL_base", "KL_sale"])).toEqual([
       "run",
       "--rm",
       "odoo",
       "odoo",
       "-d",
       "kl_x",
+      `--addons-path=${ADDONS}`,
       "-u",
       "KL_base,KL_sale",
       "--stop-after-init",
     ]);
-    expect(odooShellArgs("odoo", "kl_x")).toEqual([
+    expect(odooShellArgs("odoo", "kl_x", ADDONS)).toEqual([
       "run",
       "--rm",
       "-T",
@@ -121,23 +128,25 @@ describe("sql/argv builders", () => {
       "shell",
       "-d",
       "kl_x",
+      `--addons-path=${ADDONS}`,
       "--no-http",
     ]);
   });
 
   it("test argv maps every option", () => {
-    expect(odooTestArgs("odoo", "kl_x", {})).toEqual([
+    expect(odooTestArgs("odoo", "kl_x", ADDONS, {})).toEqual([
       "run",
       "--rm",
       "odoo",
       "odoo",
       "-d",
       "kl_x",
+      `--addons-path=${ADDONS}`,
       "--test-enable",
       "--stop-after-init",
     ]);
     expect(
-      odooTestArgs("odoo", "kl_x", {
+      odooTestArgs("odoo", "kl_x", ADDONS, {
         tags: "payment",
         file: "tests/test_x.py",
         module: "KL_sale",
@@ -151,6 +160,7 @@ describe("sql/argv builders", () => {
       "odoo",
       "-d",
       "kl_x",
+      `--addons-path=${ADDONS}`,
       "--test-enable",
       "--test-tags",
       "payment",
@@ -164,6 +174,36 @@ describe("sql/argv builders", () => {
       "0",
       "--stop-after-init",
     ]);
+  });
+});
+
+describe("containerAddonsPath", () => {
+  it("joins the image base path with every mount container path", () => {
+    const recipe = makeRecipe({
+      project: { id: "kl", dbPrefix: "kl" },
+      odoo: {
+        version: "18.0",
+        addons: [
+          { host: "backend/addons/Custom", container: "/mnt/extra-addons/Custom" },
+          { host: "backend/addons/OCA", container: "/mnt/extra-addons/OCA" },
+        ],
+      },
+    });
+    expect(containerAddonsPath(recipe)).toBe(
+      "/usr/lib/python3/dist-packages/odoo/addons,/mnt/extra-addons/Custom,/mnt/extra-addons/OCA",
+    );
+  });
+
+  it("honors a custom baseAddonsPath", () => {
+    const recipe = makeRecipe({
+      project: { id: "kl", dbPrefix: "kl" },
+      odoo: {
+        version: "18.0",
+        baseAddonsPath: "/odoo/addons",
+        addons: [{ host: "addons", container: "/mnt/c" }],
+      },
+    });
+    expect(containerAddonsPath(recipe)).toBe("/odoo/addons,/mnt/c");
   });
 });
 

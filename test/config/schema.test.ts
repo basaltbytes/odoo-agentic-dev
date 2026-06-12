@@ -46,6 +46,9 @@ describe("normalizeConfig", () => {
     expect(cfg.odoo.databaseServiceName).toBe("db");
     expect(cfg.odoo.postgresImage).toBe("postgres:16");
     expect(cfg.odoo.configFile).toBeNull();
+    expect(cfg.odoo.build).toBeNull();
+    expect(cfg.odoo.dev).toBe("xml,reload");
+    expect(cfg.odoo.baseAddonsPath).toBe("/usr/lib/python3/dist-packages/odoo/addons");
     expect(cfg.database.withoutDemo).toBe("all");
     expect(cfg.database.initialModules).toEqual([]);
     expect(cfg.project.sharedDatabase).toBeNull();
@@ -160,6 +163,58 @@ describe("normalizeConfig", () => {
         odoo: { version: "18.0", addons: [{ host: "../outside", container: "/mnt/x" }] },
       },
       /outside/i,
+    ],
+  ])("rejects %s", (_label, input, pattern) => {
+    const error = runSyncFailure(normalized(input));
+    expect(error).toBeInstanceOf(ConfigValidationError);
+    expect(error.message).toMatch(pattern);
+  });
+
+  it("normalizes odoo.build lists and honors dev: false", () => {
+    const cfg = runSyncSuccess(
+      normalized({
+        ...minimal,
+        odoo: {
+          ...minimal.odoo,
+          dev: false,
+          build: { aptPackages: ["tesseract-ocr"] },
+        },
+      }),
+    );
+    expect(cfg.odoo.dev).toBe(false);
+    expect(cfg.odoo.build).toEqual({
+      aptPackages: ["tesseract-ocr"],
+      pipPackages: [],
+      pipRequirements: [],
+      copy: [],
+    });
+  });
+
+  it.each([
+    [
+      "build alongside a dockerfile",
+      {
+        ...minimal,
+        odoo: {
+          ...minimal.odoo,
+          dockerfile: "Dockerfile.odoo",
+          build: { pipPackages: ["requests"] },
+        },
+      },
+      /mutually exclusive/,
+    ],
+    [
+      "an empty build section",
+      { ...minimal, odoo: { ...minimal.odoo, build: {} } },
+      /at least one/,
+    ],
+    [
+      "build paths escaping the repo",
+      {
+        ...minimal,
+        odoo: { ...minimal.odoo, build: { pipRequirements: ["../secrets.txt"] } },
+      },
+      /build context/,
     ],
   ])("rejects %s", (_label, input, pattern) => {
     const error = runSyncFailure(normalized(input));

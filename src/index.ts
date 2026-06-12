@@ -6,6 +6,8 @@ export type {
   OdooAgenticDevConfig,
   OdooAgenticDevConfigInput,
   OdooDatabaseConfig,
+  OdooImageBuild,
+  OdooImageBuildConfig,
   OdooProjectConfig,
   OdooRuntimeConfig,
   PackageManagerStep,

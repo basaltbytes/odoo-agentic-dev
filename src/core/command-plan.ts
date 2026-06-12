@@ -1,8 +1,15 @@
-import type { PostInitHook } from "./project-recipe.js";
+import type { OdooAgenticDevConfig, PostInitHook } from "./project-recipe.js";
 import { substituteEnvTokens } from "./worktree-context.js";
 
 // All database names reaching these builders have passed assertSafeDatabaseName
 // (^[a-z][a-z0-9_]*$), which is what makes the string interpolation safe.
+
+/**
+ * In-container `--addons-path`: the image's base addons plus every configured
+ * mount. Passed on every odoo invocation so projects need no odoo.conf for it.
+ */
+export const containerAddonsPath = (recipe: OdooAgenticDevConfig): string =>
+  [recipe.odoo.baseAddonsPath, ...recipe.odoo.addons.map((mount) => mount.container)].join(",");
 
 export const psqlArgs = (dbService: string, sql: string): Array<string> => [
   "exec",
@@ -57,6 +64,7 @@ export const removeFilestoreArgs = (odooService: string, databaseName: string): 
 export const odooInitArgs = (
   odooService: string,
   databaseName: string,
+  addonsPath: string,
   modules: ReadonlyArray<string>,
   withoutDemo: string | false,
 ): Array<string> => [
@@ -66,6 +74,7 @@ export const odooInitArgs = (
   "odoo",
   "-d",
   databaseName,
+  `--addons-path=${addonsPath}`,
   "-i",
   (modules.length > 0 ? modules : ["base"]).join(","),
   ...(withoutDemo === false ? [] : [`--without-demo=${withoutDemo}`]),
@@ -75,6 +84,7 @@ export const odooInitArgs = (
 export const odooUpdateArgs = (
   odooService: string,
   databaseName: string,
+  addonsPath: string,
   modules: ReadonlyArray<string>,
 ): Array<string> => [
   "run",
@@ -83,12 +93,17 @@ export const odooUpdateArgs = (
   "odoo",
   "-d",
   databaseName,
+  `--addons-path=${addonsPath}`,
   "-u",
   modules.join(","),
   "--stop-after-init",
 ];
 
-export const odooShellArgs = (odooService: string, databaseName: string): Array<string> => [
+export const odooShellArgs = (
+  odooService: string,
+  databaseName: string,
+  addonsPath: string,
+): Array<string> => [
   "run",
   "--rm",
   "-T",
@@ -97,6 +112,7 @@ export const odooShellArgs = (odooService: string, databaseName: string): Array<
   "shell",
   "-d",
   databaseName,
+  `--addons-path=${addonsPath}`,
   "--no-http",
 ];
 
@@ -111,6 +127,7 @@ export type OdooTestOptions = {
 export const odooTestArgs = (
   odooService: string,
   databaseName: string,
+  addonsPath: string,
   options: OdooTestOptions,
 ): Array<string> => [
   "run",
@@ -119,6 +136,7 @@ export const odooTestArgs = (
   "odoo",
   "-d",
   databaseName,
+  `--addons-path=${addonsPath}`,
   "--test-enable",
   ...(options.tags !== undefined ? ["--test-tags", options.tags] : []),
   ...(options.file !== undefined ? ["--test-file", options.file] : []),

@@ -55,14 +55,37 @@ export type OdooProjectConfig = {
   readonly stripBranchPrefixes?: ReadonlyArray<string>;
 };
 
+/**
+ * Declarative image customization: the CLI generates a Dockerfile from these
+ * (FROM odoo:<version>, apt install, pip install, COPY) so projects don't
+ * have to maintain one. All host paths are relative to the project root
+ * (the docker build context). Mutually exclusive with `odoo.dockerfile`.
+ */
+export type OdooImageBuildConfig = {
+  readonly aptPackages?: ReadonlyArray<string>;
+  readonly pipPackages?: ReadonlyArray<string>;
+  /** requirements files copied into the image and `pip install -r`-ed */
+  readonly pipRequirements?: ReadonlyArray<string>;
+  readonly copy?: ReadonlyArray<{ readonly from: string; readonly to: string }>;
+};
+
+/** Default in-image Odoo addons path (the official odoo image layout). */
+export const DEFAULT_BASE_ADDONS_PATH = "/usr/lib/python3/dist-packages/odoo/addons";
+
 export type OdooRuntimeConfig = {
   readonly version: string;
   readonly serviceName?: string;
   readonly databaseServiceName?: string;
   readonly postgresImage?: string;
   readonly configFile?: string;
+  /** hand-written Dockerfile; prefer `build` and let the CLI generate one */
   readonly dockerfile?: string;
   readonly imageName?: string;
+  readonly build?: OdooImageBuildConfig;
+  /** `--dev=` value for the dev server (default "xml,reload"); false disables it */
+  readonly dev?: string | false;
+  /** in-image addons path prepended to the mounts in every --addons-path */
+  readonly baseAddonsPath?: string;
   readonly addons: ReadonlyArray<OdooAddonMount>;
   /** path to a local Odoo source checkout, or "docker-only" */
   readonly source?: string;
@@ -114,6 +137,14 @@ export type OdooAgenticDevConfigInput = {
   };
 };
 
+/** Normalized image build: every list present (possibly empty). */
+export type OdooImageBuild = {
+  readonly aptPackages: ReadonlyArray<string>;
+  readonly pipPackages: ReadonlyArray<string>;
+  readonly pipRequirements: ReadonlyArray<string>;
+  readonly copy: ReadonlyArray<{ readonly from: string; readonly to: string }>;
+};
+
 /** Normalized config: every default applied, optionals resolved. */
 export type OdooAgenticDevConfig = {
   readonly project: {
@@ -137,6 +168,9 @@ export type OdooAgenticDevConfig = {
     readonly configFile: string | null;
     readonly dockerfile: string | null;
     readonly imageName: string | null;
+    readonly build: OdooImageBuild | null;
+    readonly dev: string | false;
+    readonly baseAddonsPath: string;
     readonly addons: ReadonlyArray<OdooAddonMount>;
     readonly source: string | null;
   };
