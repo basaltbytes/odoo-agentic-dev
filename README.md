@@ -24,109 +24,21 @@ WSL2 guidance:
 pnpm add -D @basaltbytes/odoo-agentic-dev
 ```
 
-Create `odoo-agentic-dev.config.ts` at the project root (also accepted: `.mts`, `.js`, `.mjs` — `.ts` configs load directly, no precompilation needed). For an Odoo-only project:
+Create `odoo-agentic-dev.config.ts` at the project root (also accepted: `.mts`, `.js`, `.mjs` — `.ts` configs load directly, no precompilation needed). This is a complete config for an Odoo-only project:
 
 ```ts
 import { defineConfig } from "@basaltbytes/odoo-agentic-dev";
 
 export default defineConfig({
-  project: {
-    id: "billing-odoo",
-    dbPrefix: "billing",
-    sharedDatabase: "billing_dev",
-    sharedBranches: ["main", "develop"]
-  },
-
+  project: { id: "billing-odoo", dbPrefix: "billing" },
   odoo: {
     version: "18.0",
-    dockerfile: "Dockerfile",
-    configFile: "config/odoo.conf",
-    addons: [
-      { host: "addons", container: "/mnt/extra-addons/custom" }
-    ]
-  },
-
-  database: {
-    initialModules: ["billing_core"]
+    addons: [{ host: "addons", container: "/mnt/extra-addons/custom" }]
   }
 });
 ```
 
-For a KRISS LAURE-like monorepo with a frontend companion app:
-
-```ts
-import { defineConfig } from "@basaltbytes/odoo-agentic-dev";
-
-export default defineConfig({
-  project: {
-    id: "kriss-laure",
-    dbPrefix: "kl",
-    sharedDatabase: "kl_e2e_demo",
-    sharedBranches: ["main", "master", "dev", "develop", "development"]
-  },
-
-  ports: {
-    odooBase: 18069,
-    companionBase: 28028,
-    range: 1000,
-    hashAlgorithm: "posix-cksum"
-  },
-
-  odoo: {
-    version: "18.0-20250606",
-    serviceName: "odoo",
-    databaseServiceName: "db",
-    configFile: "config/odoo.worktree.conf",
-    dockerfile: "Dockerfile.odoo",
-    imageName: "krisslaure-odoo-agentic-dev",
-    addons: [
-      { host: "backend/addons/Custom", container: "/mnt/extra-addons/Custom" },
-      { host: "backend/addons/OCA", container: "/mnt/extra-addons/OCA" }
-    ]
-  },
-
-  database: {
-    initialModules: ["KL_setup", "KL_payment_demo"],
-    withoutDemo: "all",
-    postInit: [
-      { type: "odoo-shell-file", file: "scripts/odoo-agentic-dev/post-init.py" }
-    ]
-  },
-
-  setup: {
-    submodules: true,
-    packageManagers: [
-      { cwd: ".", command: "pnpm", args: ["install"] },
-      { cwd: "frontend", command: "pnpm", args: ["install"] }
-    ]
-  },
-
-  worktree: {
-    copyFiles: [".env.e2e"],        // project-root files copied into a fresh worktree when present
-    branchPrefix: "worktree-"       // branch name for `worktree create <name>` (default)
-  },
-
-  companionApps: [
-    {
-      name: "pwa",
-      cwd: "frontend",
-      command: "pnpm",
-      args: ["dev", "--host", "0.0.0.0", "--strictPort"],
-      portEnv: "PWA_PORT",
-      urlEnv: "E2E_BASE_URL",
-      env: {
-        VITE_SERVICE_API_URL: "",
-        VITE_ODOO_DATA_BASE_NAME: "$ODOO_DATABASE",
-        VITE_E2E_PROXY_API_URL: "$ODOO_BASE_URL"
-      }
-    }
-  ]
-});
-```
-
-Ports are derived from a hash of the database name modulo `ports.range`. The default hash is FNV-1a 32-bit (`hashAlgorithm: "fnv1a32"`); set `hashAlgorithm: "posix-cksum"` to reproduce the POSIX `cksum` CRC so a project migrating from bash tooling that derives ports via `cksum <<< "$db"` keeps the exact same port per database.
-
-Database names are derived from the branch: at most **one** leading type segment (`feature`, `feat`, `bugfix`, `bug`, `hotfix`, `fix`, `chore`, `task`) is stripped — `feature/fix/x` becomes `<dbPrefix>_fix_x` — then the remainder is sanitized and prefixed with `project.dbPrefix`. Set `project.stripBranchPrefixes` (for example `["release"]`) to replace the built-in list.
+Everything else has a sensible default: the stock `odoo:<version>` image, `postgres:16`, services named `odoo`/`db`, Odoo on port `18069 + hash(db) % 1000` bound to loopback, demo data disabled. Add config only where your project actually deviates — the [Configuration Reference](#configuration-reference) below shows every field and its default.
 
 Then:
 
@@ -135,6 +47,115 @@ pnpm exec odoo-agentic-dev setup   # prepare the worktree (deps, image, database
 pnpm exec odoo-agentic-dev up      # start Odoo + companion apps
 pnpm exec odoo-agentic-dev info    # inspect the derived context at any time
 ```
+
+## Configuration Reference
+
+Every field, with defaults shown in comments. Only `project.id`, `project.dbPrefix`, `odoo.version`, and `odoo.addons` are required — a good config states only what deviates from the defaults.
+
+```ts
+import { defineConfig } from "@basaltbytes/odoo-agentic-dev";
+
+export default defineConfig({
+  project: {
+    id: "acme",                       // required — namespaces compose projects, labels, the registry
+    dbPrefix: "acme",                 // required — derived DBs are `<dbPrefix>_<branch-slug>`
+    sharedDatabase: "acme_dev",       // default: none — one DB reused by long-lived branches,
+                                      //   protected from deletion (needs --allow-shared)
+    sharedBranches: ["main", "master"], // default when sharedDatabase is set
+    stripBranchPrefixes:              // default: ["feature","feat","bugfix","bug","hotfix","fix","chore","task"]
+      ["feature", "fix"],             //   at most ONE leading branch segment is stripped before slugging
+  },
+
+  ports: {
+    odooBase: 18069,                  // default — Odoo port = odooBase + hash(db) % range
+    companionBase: 28000,             // default — same formula per companion app
+    range: 1000,                      // default
+    hashAlgorithm: "fnv1a32",         // default — "posix-cksum" reproduces bash `cksum` tooling
+                                      //   so a migrated project keeps its exact ports
+  },
+
+  odoo: {
+    version: "18.0",                  // required — image tag, and part of the DB template cache key
+    serviceName: "odoo",              // default — compose service to exec/log against
+    databaseServiceName: "db",        // default
+    postgresImage: "postgres:16",     // default
+    dockerfile: "Dockerfile.odoo",    // default: none — without it the stock `odoo:<version>` image runs
+    imageName: "acme-odoo:dev",       // default: none — tag for the dockerfile build
+    configFile: "config/odoo.conf",   // default: none — mounted read-only at /etc/odoo/odoo.conf
+    source: "../odoo",                // default: none — local Odoo checkout for `link-source`
+    addons: [                         // required, at least one mount (host path relative to repo root)
+      { host: "addons", container: "/mnt/extra-addons/custom" },
+      // { host: "/abs/elsewhere", container: "/mnt/x", allowOutsideRepo: true },
+    ],
+  },
+
+  database: {
+    initialModules: ["acme_core"],    // default: [] — installed on first setup / reset-db
+    withoutDemo: "all",               // default — `false` keeps Odoo demo data
+    postInit: [                       // default: [] — run after EVERY database init or reset,
+                                      //   and folded into the template-snapshot cache key
+      { type: "odoo-shell-file", file: "scripts/post-init.py" },
+      { type: "set-ir-config-parameter", key: "app.mobile.url", value: "$E2E_BASE_URL" },
+      // also: { type: "odoo-shell-inline", code: "..." }
+      //       { type: "command", command: "pnpm", args: ["seed"], cwd: "tools" }
+    ],
+  },
+
+  setup: {                            // host-side workspace bootstrap — runs ONCE per worktree,
+    submodules: true,                 //   default: false — git submodule update --init --recursive
+    packageManagers: [                //   default: []
+      { cwd: ".", command: "pnpm", args: ["install"] },
+      { cwd: "frontend", command: "pnpm", args: ["install"] },
+    ],
+  },
+
+  compose: {
+    file: "docker-compose.worktree.yml", // default: none — escape hatch replacing the generated
+                                         //   compose file; it can interpolate ${ODOO_DATABASE:?} etc.
+  },
+
+  worktree: {
+    copyFiles: [".env", ".env.e2e"],  // default: [] — root files copied into fresh worktrees when present
+    branchPrefix: "worktree-",        // default — branch name prefix for `worktree create <name>`
+  },
+
+  test: {
+    profiles: {                       // default: {} — `test --profile payment` appends these args
+      payment: ["--test-tags", "payment"],
+    },
+  },
+
+  envAliases: {                       // default: {} — compatibility names for existing tooling;
+    KL_WORKTREE_DB_NAME: "ODOO_DATABASE", //   an alias may target any assembled env key,
+    E2E_PWA_PORT: "PWA_PORT",         //   including companion portEnv/urlEnv keys
+  },
+
+  companionApps: [                    // default: [] — processes `up` starts alongside Odoo
+    {
+      name: "pwa",                    // lowercase kebab, unique
+      cwd: "frontend",
+      command: "sh",                  // args are NOT token-substituted — read env vars via the
+      args: ["-lc", 'pnpm dev --port "$PWA_PORT" --strictPort'], // shell (or the tool's own env support)
+      portEnv: "PWA_PORT",            // optional — env var receiving the allocated port
+      urlEnv: "E2E_BASE_URL",         // optional — env var receiving http://localhost:<port>
+      env: {                          // optional extra env; $VARS here ARE substituted from the context
+        VITE_API_URL: "$ODOO_BASE_URL",
+      },
+    },
+  ],
+
+  cleanup: {
+    maxAgeDays: 30,                   // default — age threshold for prune --older-than candidates
+    auto: false,                      // default — opt in to automatic pruning of gone-branch stacks
+  },
+});
+```
+
+Database names are derived from the branch: at most **one** leading type segment from `stripBranchPrefixes` is stripped — `feature/fix/x` becomes `<dbPrefix>_fix_x` — then the remainder is sanitized, prefixed, and capped at 58 chars (longer names keep a stable hash suffix). Ports are a hash of that database name modulo `ports.range`, so the same branch always gets the same ports on every machine.
+
+### `setup` vs `database.postInit`
+
+They run at different times against different things. `setup` is host-side workspace bootstrap — submodules and dependency installs — executed once when a worktree is prepared, before any database exists. `database.postInit` runs against Odoo after **every** database initialization or reset (and is part of the template cache key, so editing a hook correctly invalidates cached snapshots). Rule of thumb: filesystem state → `setup`; database state → `database.postInit`.
 
 ## Commands
 
