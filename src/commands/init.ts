@@ -155,8 +155,8 @@ export const renderInitErrorJson = (error: {
 const NEXT_STEPS: ReadonlyArray<string> = [
   "",
   "Next steps:",
-  "  1. pnpm add -D @basaltbytes/odoo-agentic-dev   (config types + hooks)",
-  "  2. odoo-agentic-dev setup",
+  "  1. npm install -D @basaltbytes/odoo-agentic-dev   (config types + hooks)",
+  "  2. oad setup",
 ];
 
 export const initCommand = Command.make(

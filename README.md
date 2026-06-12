@@ -7,7 +7,7 @@ Projects describe themselves with one typed recipe file (`odoo-agentic-dev.confi
 ## Requirements
 
 - Node.js 22.15 or newer (the state registry uses the built-in `node:sqlite` — no native dependency)
-- [pnpm](https://pnpm.io)
+- npm — or any package manager (yarn, pnpm; this repo itself is developed with pnpm)
 - Docker (Docker Desktop on macOS, Docker Engine on Linux) — `info` works without it
 - Windows: **WSL2 only**. Native PowerShell / `cmd.exe` execution is not supported in v1.
 
@@ -21,10 +21,10 @@ WSL2 guidance:
 ## Quickstart
 
 ```bash
-pnpm add -g @basaltbytes/odoo-agentic-dev   # global `oad` / `odoo-agentic-dev`
+npm install -g @basaltbytes/odoo-agentic-dev   # global `oad` / `odoo-agentic-dev`
 cd your-odoo-project
 oad init        # scaffold odoo-agentic-dev.config.ts (project id from the folder name)
-pnpm add -D @basaltbytes/odoo-agentic-dev   # pin the version: config types, hooks, delegation target
+npm install -D @basaltbytes/odoo-agentic-dev  # pin the version: config types, hooks, delegation target
 oad setup       # deps, image, database, template snapshot
 oad up          # start Odoo (+ companion apps)
 ```
@@ -53,7 +53,7 @@ Everything else has a sensible default: the stock `odoo:<version>` image, `postg
 
 ## For Coding Agents
 
-The CLI is designed to be driven by coding agents: deterministic derivation, no interactive prompts, meaningful exit codes, `--json` everywhere, and guard rails on destructive actions. To make your agents use it well, paste the block in [docs/AGENTS-SNIPPET.md](docs/AGENTS-SNIPPET.md) into your project's `CLAUDE.md` / `AGENTS.md` — it covers the daily commands, the env contract (`run -- <cmd>` instead of hand-assembled variables), and the rule that Docker Compose is only reached through `odoo-agentic-dev compose --`.
+The CLI is designed to be driven by coding agents: deterministic derivation, no interactive prompts, meaningful exit codes, `--json` everywhere, and guard rails on destructive actions. To make your agents use it well, paste the block in [docs/AGENTS-SNIPPET.md](docs/AGENTS-SNIPPET.md) into your project's `CLAUDE.md` / `AGENTS.md` — it covers the daily commands, the env contract (`run -- <cmd>` instead of hand-assembled variables), and the rule that Docker Compose is only reached through `oad compose --`.
 
 ## Configuration Reference
 
@@ -124,8 +124,8 @@ export default defineConfig({
   setup: {                            // host-side workspace bootstrap — runs ONCE per worktree,
     submodules: true,                 //   default: false — git submodule update --init --recursive
     packageManagers: [                //   default: []
-      { cwd: ".", command: "pnpm", args: ["install"] },
-      { cwd: "frontend", command: "pnpm", args: ["install"] },
+      { cwd: ".", command: "npm", args: ["install"] },
+      { cwd: "frontend", command: "npm", args: ["install"] },
     ],
   },
 
@@ -184,7 +184,19 @@ They run at different times against different things. `setup` is host-side works
 
 Every command accepts `--config <path>` to point at an explicit recipe file; otherwise the recipe is discovered from the current working directory upward.
 
-### `odoo-agentic-dev info`
+### `oad init`
+
+Scaffold `odoo-agentic-dev.config.ts` in the current directory: project id derived from the folder name, database prefix from the id (`kriss-laure` → `kl`), `./addons` auto-detected, `.odoo-agentic-dev/` added to `.gitignore`, and the result validated through the real config loader before success is reported. Refuses over an existing config (`--force` for the cwd case; a config in an ancestor directory always refuses — nested configs are a footgun).
+
+| Flag | Meaning |
+| --- | --- |
+| `--id <id>` | project id (default: derived from the folder name) |
+| `--db-prefix <p>` | database prefix (default: derived from the id) |
+| `--odoo-version <v>` | Odoo version for the scaffold (default `18.0`) |
+| `--force` | overwrite an existing config in the current directory |
+| `--json` | print machine-readable JSON |
+
+### `oad info`
 
 Print the resolved worktree context (worktree name, database, Compose project, Odoo URL, companion URLs) without starting containers. Works without Docker running and is deterministic for the same branch and recipe.
 
@@ -194,7 +206,7 @@ Print the resolved worktree context (worktree name, database, Compose project, O
 | `--env` | print `KEY=value` env lines |
 | `--config <path>` | explicit config file path |
 
-### `odoo-agentic-dev setup`
+### `oad setup`
 
 Prepare a new worktree: initialize Git submodules (if the recipe asks for it), run the recipe's package manager install steps, ensure the Docker image builds, reset and initialize the current worktree database, run post-init hooks, and print URLs. It prints the resolved database before destructive work and never deletes a shared database by default. The database step honors the same template fast-reset semantics as `reset-db` (see below).
 
@@ -208,7 +220,7 @@ Prepare a new worktree: initialize Git submodules (if the recipe asks for it), r
 | `--json` | suppress decorative output; print one final JSON report line |
 | `--config <path>` | explicit config file path |
 
-### `odoo-agentic-dev up`
+### `oad up`
 
 Start Odoo (and PostgreSQL) on the derived port, then the configured companion apps with context-derived env injected (`ODOO_DATABASE`, `ODOO_BASE_URL`, per-app ports). In attached mode, Ctrl-C stops all child processes and the first failing process is reported.
 
@@ -223,7 +235,7 @@ Before starting anything, `up` probes the derived Odoo port. If it is busy and t
 | `--json` | suppress decorative output; print one final JSON report line |
 | `--config <path>` | explicit config file path |
 
-### `odoo-agentic-dev down`
+### `oad down`
 
 Stop the current worktree stack. Uses the derived Compose project name, so other worktrees are never affected. A plain `down` keeps the environment in the state registry (only refreshing its last-used time); `down --volumes` removes the registry row along with the volumes.
 
@@ -234,7 +246,7 @@ Stop the current worktree stack. Uses the derived Compose project name, so other
 | `--json` | suppress decorative output; print one final JSON report line |
 | `--config <path>` | explicit config file path |
 
-### `odoo-agentic-dev reset-db`
+### `oad reset-db`
 
 Delete and recreate the current worktree database and filestore, terminate active database sessions first, install the initial modules, and run post-init hooks. Refuses unsafe database names.
 
@@ -261,13 +273,13 @@ Snapshots carry a key derived from `initialModules`, `withoutDemo`, `odoo.versio
 - PostgreSQL is per-stack, so templates only accelerate resets within the same worktree.
 - Database names are budgeted so `<database>__tpl` fits PostgreSQL's 63-char identifier limit (derived names are capped at 58 chars); an explicitly overridden name longer than 58 chars simply skips snapshotting.
 
-### `odoo-agentic-dev update <modules>`
+### `oad update <modules>`
 
 Update modules in the current worktree database. Starts PostgreSQL if needed, stops Odoo before the update when needed, and restarts Odoo after a successful update unless `--no-restart` is passed.
 
 ```bash
-pnpm exec odoo-agentic-dev update KL_setup
-pnpm exec odoo-agentic-dev update KL_base,KL_sale,KL_stock
+oad update KL_setup
+oad update KL_base,KL_sale,KL_stock
 ```
 
 | Flag | Meaning |
@@ -276,7 +288,7 @@ pnpm exec odoo-agentic-dev update KL_base,KL_sale,KL_stock
 | `--json` | suppress decorative output; print one final JSON report line |
 | `--config <path>` | explicit config file path |
 
-### `odoo-agentic-dev test`
+### `oad test`
 
 Run Odoo tests against the current worktree database. Options map to Odoo CLI flags, the exit code is non-zero on test failure, and recipes may define reusable test profiles (`test.profiles`) selected with `--profile`.
 
@@ -291,7 +303,7 @@ Run Odoo tests against the current worktree database. Options map to Odoo CLI fl
 | `--json` | suppress decorative output; print one final JSON report line (includes `exitCode`) |
 | `--config <path>` | explicit config file path |
 
-### `odoo-agentic-dev link-source`
+### `oad link-source`
 
 Create or refresh a local Odoo source pointer such as `.odoo` (a symlink on macOS/Linux/WSL2). Resolution order: `--target`, then the recipe's `odoo.source` (unless it is `"docker-only"`) — both used as-is without validation — then discovery: the conventional `../odoo` sibling checkout, then `<dirname>/odoo` next to every git worktree of the project. A discovered candidate counts only if it looks like an Odoo source checkout (contains `odoo-bin`, `odoo/` and `addons/`); when none qualifies the error lists every candidate checked. It refuses to overwrite anything that is not a symlink, and replaces an existing symlink only with `--force`. The runtime never requires this link; it exists for IDE navigation and direct source inspection.
 
@@ -302,7 +314,7 @@ Create or refresh a local Odoo source pointer such as `.odoo` (a symlink on macO
 | `--force` | replace an existing symlink |
 | `--config <path>` | explicit config file path |
 
-### `odoo-agentic-dev list`
+### `oad list`
 
 List the environments this machine's state registry knows about, reconciled against Docker reality: status is `running`, `stopped`, or `vanished` (row exists, Docker stack is gone). Labeled Docker stacks that are missing from the registry are adopted into it on sight. Output columns: worktree, database, port, status, relative last-used time, and `shared`/`template` markers. Listing never modifies or removes environments.
 
@@ -312,7 +324,7 @@ List the environments this machine's state registry knows about, reconciled agai
 | `--json` | print the full rows + status as JSON |
 | `--config <path>` | explicit config file path |
 
-### `odoo-agentic-dev prune`
+### `oad prune`
 
 Garbage-collect dead environments. By default only clearly-dead targets are candidates: `gone-branch` (root dir exists, is a repo, the recorded branch was deleted), `gone-rootdir` (the worktree directory no longer exists), and `vanished` (registry row with no Docker stack — row-only cleanup). Age alone never makes a candidate unless you pass `--older-than <days>`.
 
@@ -332,7 +344,7 @@ The safety contract:
 | `--json` | print the candidates/removals report as JSON |
 | `--config <path>` | explicit config file path |
 
-### `odoo-agentic-dev doctor`
+### `oad doctor`
 
 Environment health report (`✓`/`✗` per check, or `--json`): Docker daemon responsive, Compose is v2, Node >= 22.15, config discovery + validation (soft when absent), context derivation, Odoo port free or its holder identified, port collisions among known stacks, state registry openable and writable, git on PATH, WSL2 detection with setup guidance, and the current prune-candidate count. Exits 1 if any hard check fails.
 
@@ -341,7 +353,7 @@ Environment health report (`✓`/`✗` per check, or `--json`): Docker daemon re
 | `--json` | print the checks array as JSON |
 | `--config <path>` | explicit config file path |
 
-### `odoo-agentic-dev logs [service]`
+### `oad logs [service]`
 
 Stream `docker compose logs` for one service of the current worktree stack (default: the Odoo service).
 
@@ -350,25 +362,25 @@ Stream `docker compose logs` for one service of the current worktree stack (defa
 | `--follow` | follow log output |
 | `--config <path>` | explicit config file path |
 
-### `odoo-agentic-dev shell`
+### `oad shell`
 
 Open an interactive `odoo shell` against the current worktree database (`docker compose run --rm <odoo> odoo shell -d <database>`), with full TTY passthrough. The child's exit code becomes the command's exit code.
 
-### `odoo-agentic-dev psql [-- <args>]`
+### `oad psql [-- <args>]`
 
 Open `psql` inside the database container connected to the current worktree database. Extra `psql` arguments pass through after `--`:
 
 ```bash
-pnpm exec odoo-agentic-dev psql -- -c 'SELECT count(*) FROM res_partner;'
+oad psql -- -c 'SELECT count(*) FROM res_partner;'
 ```
 
-### `odoo-agentic-dev run [--env-file <path>]... -- <command> [args...]`
+### `oad run [--env-file <path>]... -- <command> [args...]`
 
 Execute any host command with the worktree environment injected — the assembled context env (`ODOO_DATABASE`, `ODOO_HTTP_PORT`, companion ports/URLs, aliases) layered over the parent environment. Each `--env-file` (repeatable) is a dotenv-style file (`KEY=value` lines, `#` comments, optional surrounding quotes stripped) whose pairs are explicit overrides: parent env < context env < env files, later files win. The child runs with full TTY passthrough and its exit code becomes the command's exit code.
 
 ```bash
-pnpm exec odoo-agentic-dev run -- pnpm test:e2e
-pnpm exec odoo-agentic-dev run --env-file .env.e2e -- playwright test
+oad run -- npm run test:e2e
+oad run --env-file .env.e2e -- playwright test
 ```
 
 | Flag | Meaning |
@@ -376,17 +388,17 @@ pnpm exec odoo-agentic-dev run --env-file .env.e2e -- playwright test
 | `--env-file <path>` | dotenv-style overrides, repeatable (later files win; missing file = error) |
 | `--config <path>` | explicit config file path |
 
-### `odoo-agentic-dev compose -- <compose-args...>`
+### `oad compose -- <compose-args...>`
 
 `docker compose` passthrough scoped to this worktree's stack: the canonical preamble (`-p <project>`, `-f <compose-file>`, `--project-directory`, context env) is prepended and the trailing arguments land verbatim, with full stdio inheritance — `logs -f` streams, interactive `exec` works. The child's exit code becomes the command's exit code.
 
 ```bash
-pnpm exec odoo-agentic-dev compose -- ps
-pnpm exec odoo-agentic-dev compose -- logs -f --tail 100 odoo
-pnpm exec odoo-agentic-dev compose -- exec db bash
+oad compose -- ps
+oad compose -- logs -f --tail 100 odoo
+oad compose -- exec db bash
 ```
 
-### `odoo-agentic-dev worktree create <name>`
+### `oad worktree create <name>`
 
 Create a git worktree and run the full `setup` flow inside it: best-effort `git fetch origin`; base ref from `--base`, else `ODOO_WORKTREE_BASE_REF`, else origin's HEAD, else `HEAD`; `git worktree add -b <branchPrefix><name> <path> <base>`; copy the recipe's `worktree.copyFiles` that exist in the project root; then deps + image + database against the worktree as project root. Prints the worktree path when done.
 
@@ -399,7 +411,7 @@ With `--hook-json` (the Claude Code WorktreeCreate hook contract) the `{worktree
 | `--hook-json` | Claude Code hook mode (payload on stdin, path-only stdout) |
 | `--config <path>` | explicit config file path |
 
-### `odoo-agentic-dev worktree remove <path>`
+### `oad worktree remove <path>`
 
 Tear down a worktree's environment. When the directory still has a discoverable config, its own context is resolved and the stack goes down with volumes (`down --volumes` semantics) before the registry row is removed; a shared database is never torn down without `--allow-shared` (logged and skipped instead). When the directory is already gone, the identity is rebuilt from the directory name against the current project root and the teardown is label-based — the same machinery `prune` uses, no compose file needed. The directory itself is not deleted (git owns that).
 
@@ -410,6 +422,19 @@ With `--hook-json` (the WorktreeRemove hook contract) the `{worktree_path}` payl
 | `--hook-json` | Claude Code hook mode (payload on stdin, always exit 0) |
 | `--allow-shared` | permit tearing down the shared database |
 | `--log-file <path>` | append step logs to this file |
+| `--config <path>` | explicit config file path |
+
+### `oad eject [all|dockerfile|compose]`
+
+Write the generated Dockerfile and/or Compose file into the repo as files you own and print the exact config patch to apply (`--write-config` rewrites the config for you, losing comments). See [Ejecting](#ejecting).
+
+| Flag | Meaning |
+| --- | --- |
+| `--dockerfile-out <path>` | ejected Dockerfile path (default `Dockerfile.odoo`) |
+| `--compose-out <path>` | ejected compose path (default `docker-compose.worktree.yml`) |
+| `--force` | overwrite existing files / a commented config with `--write-config` |
+| `--write-config` | rewrite the config in place instead of printing the patch |
+| `--json` | print machine-readable JSON |
 | `--config <path>` | explicit config file path |
 
 ## Machine-Readable Output (`--json`)
@@ -514,10 +539,10 @@ Hook files resolve relative to the project root. Only `set-ir-config-parameter` 
 ## Ejecting
 
 ```bash
-odoo-agentic-dev eject            # all (Dockerfile + compose), prints the config patch
-odoo-agentic-dev eject compose    # just the compose file
-odoo-agentic-dev eject dockerfile # just the Dockerfile (needs an odoo.build block)
-odoo-agentic-dev eject --write-config   # also rewrite the config in place
+oad eject            # all (Dockerfile + compose), prints the config patch
+oad eject compose    # just the compose file
+oad eject dockerfile # just the Dockerfile (needs an odoo.build block)
+oad eject --write-config   # also rewrite the config in place
 ```
 
 `eject` converts generated infra into project-owned files: it writes the Dockerfile (`Dockerfile.odoo`) and/or the compose file (`docker-compose.worktree.yml`) into the repo as plain, editable files and points the config at them via the existing `odoo.dockerfile` / `compose.file` escape hatches. There are no new runtime concepts — eject just automates stepping onto hatches the CLI already supports.

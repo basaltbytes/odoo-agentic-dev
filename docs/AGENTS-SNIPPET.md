@@ -7,25 +7,26 @@ agents drive the environment through the CLI instead of improvising.
 
 ## Odoo dev environment (odoo-agentic-dev)
 
-Local Odoo environments are managed by `@basaltbytes/odoo-agentic-dev`. One
-isolated stack (database, ports, Docker Compose project) is derived
-deterministically from the current git worktree/branch — same branch, same
-database, same ports, on every machine.
+Local Odoo environments are managed by `@basaltbytes/odoo-agentic-dev`
+(command: `oad`, long form `odoo-agentic-dev`; without a global install use
+`npx oad`). One isolated stack (database, ports, Docker Compose project) is
+derived deterministically from the current git worktree/branch — same branch,
+same database, same ports, on every machine.
 
-- `pnpm exec odoo-agentic-dev info --json` — the resolved context: database,
-  ports, URLs, and every env var the tooling derives.
-- `pnpm exec odoo-agentic-dev setup` — prepare a fresh worktree end to end
-  (deps, Docker image, database init, template snapshot).
-- `pnpm exec odoo-agentic-dev up --detach` / `down` — start/stop the stack.
-- `pnpm exec odoo-agentic-dev reset-db --json` — recreate the database
-  (fast template restore when the recipe hasn't changed).
-- `pnpm exec odoo-agentic-dev update <modules>` / `test --tags <tags>` —
-  module upgrade / Odoo test runs against this worktree's database.
-- `pnpm exec odoo-agentic-dev run -- <cmd>` — run any host command with the
-  context env injected (`ODOO_DATABASE`, `ODOO_BASE_URL`, companion app ports).
-  Never hand-assemble these variables.
-- `pnpm exec odoo-agentic-dev compose -- <args>` — Docker Compose scoped to
-  this worktree's project. Never call `docker compose` directly.
+- `oad info --json` — the resolved context: database, ports, URLs, and every
+  env var the tooling derives.
+- `oad setup` — prepare a fresh worktree end to end (deps, Docker image,
+  database init, template snapshot).
+- `oad up --detach` / `down` — start/stop the stack.
+- `oad reset-db --json` — recreate the database (fast template restore when
+  the recipe hasn't changed).
+- `oad update <modules>` / `test --tags <tags>` — module upgrade / Odoo test
+  runs against this worktree's database.
+- `oad run -- <cmd>` — run any host command with the context env injected
+  (`ODOO_DATABASE`, `ODOO_BASE_URL`, companion app ports). Never hand-assemble
+  these variables.
+- `oad compose -- <args>` — Docker Compose scoped to this worktree's project.
+  Never call `docker compose` directly.
 
 Rules:
 
