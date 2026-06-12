@@ -61,7 +61,8 @@ export default {
       });
       expect(result.status).toBe(0);
       expect(result.stderr).not.toContain("ExperimentalWarning");
-      expect(result.stdout).toContain("No environments recorded.");
+      // no stdout-content assertion: --all-projects adopts labeled Docker
+      // containers by design, so a dev machine with live stacks shows rows
     },
   );
 

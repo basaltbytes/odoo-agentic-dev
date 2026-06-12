@@ -2,10 +2,12 @@
 // must stay first: installs the node:sqlite ExperimentalWarning filter before
 // any import that could transitively load node:sqlite (imports hoist)
 import "./suppress-sqlite-warning.js";
+import { delegateToLocalInstallIfPresent } from "./delegate.js";
 import { Cause, Console, Effect, Layer } from "effect";
 import { CliError, Command } from "effect/unstable/cli";
 import { NodeRuntime, NodeServices } from "@effect/platform-node";
 import { infoCommand } from "./commands/info.js";
+import { initCommand } from "./commands/init.js";
 import { setupCommand } from "./commands/setup.js";
 import { upCommand } from "./commands/up.js";
 import { downCommand } from "./commands/down.js";
@@ -33,9 +35,15 @@ import { StateStoreLive } from "./platform/state-store.js";
 import { PortProbeLive } from "./platform/port-probe.js";
 import { isRuntimeError, renderError } from "./errors/errors.js";
 
+// Hand off to a project-local install before doing any work. Returns here when
+// there is nothing to delegate to (or anything failed); otherwise it execs the
+// local CLI and exits, so nothing below this line runs.
+delegateToLocalInstallIfPresent();
+
 const root = Command.make("odoo-agentic-dev").pipe(
   Command.withDescription("Agent-friendly local Odoo development runtime"),
   Command.withSubcommands([
+    initCommand,
     infoCommand,
     setupCommand,
     upCommand,

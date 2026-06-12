@@ -75,7 +75,7 @@ export const loadRecipe = (options: {
       return yield* Effect.fail(
         new ConfigLoadError({
           path: options.cwd,
-          reason: `No odoo-agentic-dev config found from ${options.cwd} upward (looked for ${CONFIG_FILENAMES.join(", ")})`,
+          reason: `No odoo-agentic-dev config found from ${options.cwd} upward (looked for ${CONFIG_FILENAMES.join(", ")}). Run \`odoo-agentic-dev init\` to create one.`,
         }),
       );
     }

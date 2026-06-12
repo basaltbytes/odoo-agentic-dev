@@ -21,10 +21,21 @@ WSL2 guidance:
 ## Quickstart
 
 ```bash
-pnpm add -D @basaltbytes/odoo-agentic-dev
+pnpm add -g @basaltbytes/odoo-agentic-dev   # global `oad` / `odoo-agentic-dev`
+cd your-odoo-project
+oad init        # scaffold odoo-agentic-dev.config.ts (project id from the folder name)
+pnpm add -D @basaltbytes/odoo-agentic-dev   # pin the version: config types, hooks, delegation target
+oad setup       # deps, image, database, template snapshot
+oad up          # start Odoo (+ companion apps)
 ```
 
-Create `odoo-agentic-dev.config.ts` at the project root (also accepted: `.mts`, `.js`, `.mjs` — `.ts` configs load directly, no precompilation needed). This is a complete config for an Odoo-only project:
+`init` derives the project id from the folder name and a database prefix from the id (`kriss-laure` → `kl`), detects an `addons/` directory, git-ignores the generated `.odoo-agentic-dev/`, and validates the result through the real config loader. Adjust `odoo.version` and the addon mounts, and you're running.
+
+### Global install & local delegation
+
+The global `oad` is a convenience front door, not a version authority: whenever it runs inside a project that has `@basaltbytes/odoo-agentic-dev` installed locally, it transparently re-executes the **project-local** CLI — so every repo runs exactly the version its lockfile pins, while you type `oad` everywhere. Outside a project, the global binary serves the cross-project commands (`init`, `list --all-projects`, `prune`, `doctor`). Set `ODOO_AGENTIC_DEV_NO_DELEGATE=1` to suppress delegation when debugging. Commands that operate on a stack (`up`, `down`, `reset-db`, …) require a config — without one they exit 1 and point you at `init`.
+
+The config file is `odoo-agentic-dev.config.ts` at the project root (also accepted: `.mts`, `.js`, `.mjs` — `.ts` configs load directly, no precompilation needed). This is a complete config for an Odoo-only project:
 
 ```ts
 import { defineConfig } from "@basaltbytes/odoo-agentic-dev";
@@ -39,14 +50,6 @@ export default defineConfig({
 ```
 
 Everything else has a sensible default: the stock `odoo:<version>` image, `postgres:16`, services named `odoo`/`db`, Odoo on port `18069 + hash(db) % 1000` bound to loopback, demo data disabled. Add config only where your project actually deviates — the [Configuration Reference](#configuration-reference) below shows every field and its default.
-
-Then:
-
-```bash
-pnpm exec odoo-agentic-dev setup   # prepare the worktree (deps, image, database)
-pnpm exec odoo-agentic-dev up      # start Odoo + companion apps
-pnpm exec odoo-agentic-dev info    # inspect the derived context at any time
-```
 
 ## For Coding Agents
 

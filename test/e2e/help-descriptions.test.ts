@@ -34,6 +34,7 @@ describe.skipIf(!existsSync(CLI))("--help subcommand descriptions (run `pnpm bui
     const names = subcommands.map((s) => s.name);
     // the full root command tree from src/cli.ts
     expect(names).toEqual([
+      "init",
       "info",
       "setup",
       "up",
