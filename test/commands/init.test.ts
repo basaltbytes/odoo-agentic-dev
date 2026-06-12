@@ -146,7 +146,8 @@ describe("performInit refusal rules", () => {
     expect(exitForced._tag).toBe("Failure");
     const text = JSON.stringify(exitForced);
     expect(text).toContain("InitError");
-    expect(text).toContain(parent);
+    // the path appears JSON-escaped (Windows backslashes become \\)
+    expect(text).toContain(JSON.stringify(parent).slice(1, -1));
     // child has no config written
     expect(existsSync(join(child, "odoo-agentic-dev.config.ts"))).toBe(false);
   });

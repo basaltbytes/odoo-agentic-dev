@@ -1,6 +1,6 @@
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { Effect, Layer } from "effect";
 import {
@@ -197,7 +197,7 @@ describe("runWorktreeCreate", () => {
     const rootDir = mkdtempSync(join(tmpdir(), "oad-wt-root-"));
     tmp.push(rootDir);
     writeFileSync(join(rootDir, ".env.e2e"), "E2E=1\n");
-    const wtPath = join(rootDir, "..", `${rootDir.split("/").at(-1)}-feat`);
+    const wtPath = join(rootDir, "..", `${basename(rootDir)}-feat`);
     tmp.push(wtPath);
     const recipe = makeRecipe({
       project: { id: "kl", dbPrefix: "kl" },
