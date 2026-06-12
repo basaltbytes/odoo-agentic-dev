@@ -60,7 +60,7 @@ const services = Layer.mergeAll(
   Layer.provideMerge(NodeServices.layer),
 );
 
-const program = Command.runWith(root, { version: "0.1.0" })(process.argv.slice(2)).pipe(
+const program = Command.runWith(root, { version: "0.1.0-beta.1" })(process.argv.slice(2)).pipe(
   Effect.provide(services),
   Effect.catch((error) =>
     Effect.gen(function* () {
