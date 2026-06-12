@@ -101,6 +101,11 @@ export default defineConfig({
     ]
   },
 
+  worktree: {
+    copyFiles: [".env.e2e"],        // project-root files copied into a fresh worktree when present
+    branchPrefix: "worktree-"       // branch name for `worktree create <name>` (default)
+  },
+
   companionApps: [
     {
       name: "pwa",
@@ -244,7 +249,7 @@ Run Odoo tests against the current worktree database. Options map to Odoo CLI fl
 
 ### `odoo-agentic-dev link-source`
 
-Create or refresh a local Odoo source pointer such as `.odoo` (a symlink on macOS/Linux/WSL2). Resolution order: `--target`, then the recipe's `odoo.source` (unless it is `"docker-only"`), then a conventional `../odoo` sibling checkout. It refuses to overwrite anything that is not a symlink, and replaces an existing symlink only with `--force`. The runtime never requires this link; it exists for IDE navigation and direct source inspection.
+Create or refresh a local Odoo source pointer such as `.odoo` (a symlink on macOS/Linux/WSL2). Resolution order: `--target`, then the recipe's `odoo.source` (unless it is `"docker-only"`) — both used as-is without validation — then discovery: the conventional `../odoo` sibling checkout, then `<dirname>/odoo` next to every git worktree of the project. A discovered candidate counts only if it looks like an Odoo source checkout (contains `odoo-bin`, `odoo/` and `addons/`); when none qualifies the error lists every candidate checked. It refuses to overwrite anything that is not a symlink, and replaces an existing symlink only with `--force`. The runtime never requires this link; it exists for IDE navigation and direct source inspection.
 
 | Flag | Meaning |
 | --- | --- |
@@ -312,6 +317,56 @@ Open `psql` inside the database container connected to the current worktree data
 ```bash
 pnpm exec odoo-agentic-dev psql -- -c 'SELECT count(*) FROM res_partner;'
 ```
+
+### `odoo-agentic-dev run [--env-file <path>]... -- <command> [args...]`
+
+Execute any host command with the worktree environment injected — the assembled context env (`ODOO_DATABASE`, `ODOO_HTTP_PORT`, companion ports/URLs, aliases) layered over the parent environment. Each `--env-file` (repeatable) is a dotenv-style file (`KEY=value` lines, `#` comments, optional surrounding quotes stripped) whose pairs are explicit overrides: parent env < context env < env files, later files win. The child runs with full TTY passthrough and its exit code becomes the command's exit code.
+
+```bash
+pnpm exec odoo-agentic-dev run -- pnpm test:e2e
+pnpm exec odoo-agentic-dev run --env-file .env.e2e -- playwright test
+```
+
+| Flag | Meaning |
+| --- | --- |
+| `--env-file <path>` | dotenv-style overrides, repeatable (later files win; missing file = error) |
+| `--config <path>` | explicit config file path |
+
+### `odoo-agentic-dev compose -- <compose-args...>`
+
+`docker compose` passthrough scoped to this worktree's stack: the canonical preamble (`-p <project>`, `-f <compose-file>`, `--project-directory`, context env) is prepended and the trailing arguments land verbatim, with full stdio inheritance — `logs -f` streams, interactive `exec` works. The child's exit code becomes the command's exit code.
+
+```bash
+pnpm exec odoo-agentic-dev compose -- ps
+pnpm exec odoo-agentic-dev compose -- logs -f --tail 100 odoo
+pnpm exec odoo-agentic-dev compose -- exec db bash
+```
+
+### `odoo-agentic-dev worktree create <name>`
+
+Create a git worktree and run the full `setup` flow inside it: best-effort `git fetch origin`; base ref from `--base`, else `ODOO_WORKTREE_BASE_REF`, else origin's HEAD, else `HEAD`; `git worktree add -b <branchPrefix><name> <path> <base>`; copy the recipe's `worktree.copyFiles` that exist in the project root; then deps + image + database against the worktree as project root. Prints the worktree path when done.
+
+With `--hook-json` (the Claude Code WorktreeCreate hook contract) the `{worktree_name, worktree_path}` payload is read from stdin, all human output goes to stderr, and stdout carries exactly one line — the final worktree path. If setup fails in hook mode the half-made worktree is force-removed and the command exits non-zero so the hook aborts the creation.
+
+| Flag | Meaning |
+| --- | --- |
+| `--path <path>` | worktree directory (default: sibling `<repo-basename>-<name>`) |
+| `--base <ref>` | base ref for the new branch |
+| `--hook-json` | Claude Code hook mode (payload on stdin, path-only stdout) |
+| `--config <path>` | explicit config file path |
+
+### `odoo-agentic-dev worktree remove <path>`
+
+Tear down a worktree's environment. When the directory still has a discoverable config, its own context is resolved and the stack goes down with volumes (`down --volumes` semantics) before the registry row is removed; a shared database is never torn down without `--allow-shared` (logged and skipped instead). When the directory is already gone, the identity is rebuilt from the directory name against the current project root and the teardown is label-based — the same machinery `prune` uses, no compose file needed. The directory itself is not deleted (git owns that).
+
+With `--hook-json` (the WorktreeRemove hook contract) the `{worktree_path}` payload is read from stdin and the command **always exits 0** — a removal hook cannot block — logging each step to `--log-file` (directory created) when given, stderr otherwise.
+
+| Flag | Meaning |
+| --- | --- |
+| `--hook-json` | Claude Code hook mode (payload on stdin, always exit 0) |
+| `--allow-shared` | permit tearing down the shared database |
+| `--log-file <path>` | append step logs to this file |
+| `--config <path>` | explicit config file path |
 
 ## Machine-Readable Output (`--json`)
 
