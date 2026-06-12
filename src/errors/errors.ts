@@ -132,6 +132,14 @@ export class EjectError extends Data.TaggedError("EjectError")<{
   }
 }
 
+export class InitError extends Data.TaggedError("InitError")<{
+  readonly reason: string;
+}> {
+  override get message(): string {
+    return this.reason;
+  }
+}
+
 export type RuntimeError =
   | ConfigLoadError
   | ConfigValidationError
@@ -146,7 +154,8 @@ export type RuntimeError =
   | SourceResolverError
   | StateError
   | PortConflictError
-  | EjectError;
+  | EjectError
+  | InitError;
 
 const RUNTIME_ERROR_TAGS: ReadonlySet<string> = new Set([
   "ConfigLoadError",
@@ -163,6 +172,7 @@ const RUNTIME_ERROR_TAGS: ReadonlySet<string> = new Set([
   "StateError",
   "PortConflictError",
   "EjectError",
+  "InitError",
 ]);
 
 export const isRuntimeError = (u: unknown): u is RuntimeError =>
@@ -253,6 +263,8 @@ export const renderError = (error: RuntimeError): string => {
       );
     case "EjectError":
       return lines(`Eject failed: ${error.reason}`);
+    case "InitError":
+      return lines(`Init failed: ${error.reason}`);
   }
 };
 
