@@ -530,6 +530,10 @@ odoo-agentic-dev eject --write-config   # also rewrite the config in place
 
 By default eject prints a ready-to-apply config patch and changes nothing else; pass a path to override the destination (`--dockerfile-out` / `--compose-out`), `--force` to overwrite an existing file, and `--json` for a machine-readable `{ ok, written, configPatch, configWritten }` object. `--write-config` rewrites the config in place and discards comments, so it refuses a commented file without `--force`. `eject dockerfile` refuses a stock-image config — there is nothing to eject; add an `odoo.build` block first, or eject only the compose file.
 
+## Releasing
+
+Releases are published by CI via [npm trusted publishing](https://docs.npmjs.com/trusted-publishers) (OIDC) — no npm token exists anywhere. Bump the version in `package.json`, commit, tag `v<version>`, and push the tag; `.github/workflows/release.yml` runs the full gate (`prepublishOnly`), publishes with registry-generated provenance, and creates a GitHub Release with generated notes. The tag must match `package.json` or the workflow refuses.
+
 ## Development
 
 ```bash
