@@ -60,7 +60,8 @@ const services = Layer.mergeAll(
   Layer.provideMerge(NodeServices.layer),
 );
 
-const program = Command.run(root, { version: "0.1.0" }).pipe(
+const program = Command.runWith(root, { version: "0.1.0" })(process.argv.slice(2)).pipe(
+  Effect.provide(services),
   Effect.catch((error) =>
     Effect.gen(function* () {
       // ShowHelp is the cli library's control-flow signal: by the time it
@@ -73,7 +74,6 @@ const program = Command.run(root, { version: "0.1.0" }).pipe(
       process.exitCode = 1;
     }),
   ),
-  Effect.provide(services),
   // Defects (Die causes, thrown TypeErrors, ...) are not on the typed channel
   // above and runMain's reporting is disabled, so render them ourselves
   // instead of exiting silently. Placed after Effect.provide so defects raised

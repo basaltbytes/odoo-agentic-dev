@@ -1,4 +1,12 @@
-import { lstatSync, mkdirSync, mkdtempSync, readlinkSync, rmSync, symlinkSync } from "node:fs";
+import {
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  readlinkSync,
+  rmSync,
+  symlinkSync,
+  unlinkSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
@@ -91,7 +99,7 @@ describe("performLinkSource", () => {
       }),
     );
     expect(readlinkSync(linkPath)).toBe(source);
-    rmSync(linkPath);
+    unlinkSync(linkPath);
     expect(
       runSyncFailure(
         performLinkSource({

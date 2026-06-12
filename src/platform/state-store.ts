@@ -42,6 +42,7 @@ export interface StateStoreApi {
 }
 
 export const StateStore = Context.Service<StateStoreApi>("odoo-agentic-dev/StateStore");
+type SqliteModule = typeof import("node:sqlite");
 
 /** Global registry location; `ODOO_AGENTIC_DEV_STATE_DB` overrides (tests). */
 export const resolveStateDbPath = (env: Record<string, string | undefined> = process.env): string =>
@@ -100,32 +101,52 @@ const toRow = (record: Record<string, unknown>): EnvironmentRow => ({
   templateKey: record["template_key"] === null ? null : String(record["template_key"]),
 });
 
+// All effects happen lazily per-operation inside withDb (open → run → close,
+// so parallel agent sessions never hold the registry open); building the
+// service itself is pure.
 export const StateStoreLive = Layer.effect(
   StateStore,
-  Effect.gen(function* () {
+  Effect.sync(() => {
     const attempt = <A>(label: string, thunk: () => A): Effect.Effect<A, StateError> =>
       Effect.try({
         try: thunk,
         catch: (cause) => new StateError({ reason: `${label}: ${String(cause)}` }),
       });
 
-    const sqlite = yield* Effect.tryPromise({
-      try: () => import("node:sqlite"),
-      catch: (cause) => new StateError({ reason: `loading node:sqlite: ${String(cause)}` }),
-    });
+    let sqlitePromise: Promise<SqliteModule> | undefined;
+    const loadSqlite = (): Effect.Effect<SqliteModule, StateError> =>
+      Effect.tryPromise({
+        try: () => {
+          sqlitePromise ??= import("node:sqlite");
+          return sqlitePromise;
+        },
+        catch: (cause) => new StateError({ reason: `loading node:sqlite: ${String(cause)}` }),
+      });
 
-    const db: DatabaseSync = yield* attempt("opening state db", () => {
-      const path = resolveStateDbPath();
-      mkdirSync(dirname(path), { recursive: true });
-      const handle = new sqlite.DatabaseSync(path);
-      handle.exec("PRAGMA journal_mode=WAL;");
-      handle.exec(SCHEMA_SQL);
-      return handle;
-    });
+    const withDb = <A>(
+      label: string,
+      thunk: (db: DatabaseSync) => A,
+    ): Effect.Effect<A, StateError> =>
+      Effect.gen(function* () {
+        const sqlite = yield* loadSqlite();
+        return yield* attempt(label, () => {
+          const path = resolveStateDbPath();
+          mkdirSync(dirname(path), { recursive: true });
+          const db = new sqlite.DatabaseSync(path, { timeout: 5000 });
+          try {
+            db.exec("PRAGMA busy_timeout=5000;");
+            db.exec("PRAGMA journal_mode=WAL;");
+            db.exec(SCHEMA_SQL);
+            return thunk(db);
+          } finally {
+            db.close();
+          }
+        });
+      });
 
     return {
       upsert: (env) =>
-        attempt("upsert", () => {
+        withDb("upsert", (db) => {
           const now = env.now ?? new Date().toISOString();
           db.prepare(UPSERT_SQL).run(
             env.composeProject,
@@ -141,21 +162,21 @@ export const StateStoreLive = Layer.effect(
           );
         }),
       touch: (composeProject) =>
-        attempt("touch", () => {
+        withDb("touch", (db) => {
           db.prepare("UPDATE environments SET last_used_at = ? WHERE compose_project = ?").run(
             new Date().toISOString(),
             composeProject,
           );
         }),
       get: (composeProject) =>
-        attempt("get", () => {
+        withDb("get", (db) => {
           const record = db
             .prepare("SELECT * FROM environments WHERE compose_project = ?")
             .get(composeProject);
           return record === undefined ? undefined : toRow(record);
         }),
       list: (filter) =>
-        attempt("list", () => {
+        withDb("list", (db) => {
           const records =
             filter.projectId === undefined
               ? db.prepare("SELECT * FROM environments ORDER BY compose_project").all()
@@ -167,11 +188,11 @@ export const StateStoreLive = Layer.effect(
           return records.map(toRow);
         }),
       remove: (composeProject) =>
-        attempt("remove", () => {
+        withDb("remove", (db) => {
           db.prepare("DELETE FROM environments WHERE compose_project = ?").run(composeProject);
         }),
       setTemplate: (composeProject, meta) =>
-        attempt("setTemplate", () => {
+        withDb("setTemplate", (db) => {
           db.prepare(
             "UPDATE environments SET template_db = ?, template_key = ? WHERE compose_project = ?",
           ).run(meta?.databaseName ?? null, meta?.key ?? null, composeProject);
