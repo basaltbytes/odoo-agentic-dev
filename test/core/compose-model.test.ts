@@ -62,6 +62,7 @@ describe("buildComposeModel", () => {
     expect(odoo.command).toEqual([
       "odoo",
       `--database=${ctx.databaseName}`,
+      "--http-port=8069",
       "--no-database-list",
       "--addons-path=/usr/lib/python3/dist-packages/odoo/addons,/mnt/extra-addons/Custom,/mnt/extra-addons/OCA",
       "--dev=xml,reload",

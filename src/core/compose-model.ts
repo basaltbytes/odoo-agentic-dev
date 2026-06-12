@@ -108,6 +108,10 @@ export const buildComposeModel = (
         command: [
           "odoo",
           `--database=${databaseArg}`,
+          // pin the container-side port: Odoo 19+ treats ODOO_* env vars as
+          // config, and the injected ODOO_HTTP_PORT (the HOST port) would
+          // otherwise rebind the server away from the mapped 8069
+          "--http-port=8069",
           "--no-database-list",
           `--addons-path=${containerAddonsPath(recipe)}`,
           ...(recipe.odoo.dev === false ? [] : [`--dev=${recipe.odoo.dev}`]),
