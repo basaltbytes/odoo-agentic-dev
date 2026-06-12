@@ -36,8 +36,13 @@ jobs:
             exit 1
           fi
       # prepublishOnly runs the full gate (lint, typecheck, build, test);
-      # --no-git-checks because a tag checkout is a detached HEAD
+      # --no-git-checks because a tag checkout is a detached HEAD.
+      # NPM_CONFIG_PROVENANCE: pnpm reads neither publishConfig.provenance
+      # nor implies provenance under OIDC (verified beta.4/beta.5 shipped
+      # without attestations) — the env var is the reliable switch.
       - run: pnpm publish --access public --no-git-checks
+        env:
+          NPM_CONFIG_PROVENANCE: "true"
       - name: GitHub Release
         if: github.ref_type == 'tag'
         env:
