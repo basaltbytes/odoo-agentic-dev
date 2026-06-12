@@ -1,6 +1,7 @@
 import { resolve } from "node:path";
 import { Console, Effect } from "effect";
 import { Command, Flag } from "effect/unstable/cli";
+import { ConfigValidationError } from "../errors/errors.js";
 import type { OdooAgenticDevConfig } from "../core/project-recipe.js";
 import type { WorktreeContext } from "../core/worktree-context.js";
 import { substituteEnvTokens } from "../core/worktree-context.js";
@@ -46,6 +47,25 @@ export const buildUpPlan = (
   companions: flags.odooOnly ? [] : buildCompanionSpecs(recipe, ctx),
 });
 
+/**
+ * Attached `up` (no --detach) streams Odoo/companion output until interrupted,
+ * so it can never reach a final single JSON line; `--json` is only meaningful
+ * detached. Reject up front with guidance pointing at --detach.
+ */
+export const guardUpJson = (flags: {
+  readonly json: boolean;
+  readonly detach: boolean;
+}): Effect.Effect<void, ConfigValidationError> =>
+  flags.json && !flags.detach
+    ? Effect.fail(
+        new ConfigValidationError({
+          issues: [
+            "up --json requires --detach (attached up streams forever and never emits a final JSON line)",
+          ],
+        }),
+      )
+    : Effect.void;
+
 export const upCommand = Command.make(
   "up",
   {
@@ -61,6 +81,7 @@ export const upCommand = Command.make(
   (flags) =>
     withJsonReport("up", flags.json, (report) =>
       Effect.gen(function* () {
+        yield* guardUpJson(flags);
         const { ctx, recipe } = yield* resolveContext(flags.config);
         yield* report.setContext(ctx);
         const compose = yield* DockerCompose;

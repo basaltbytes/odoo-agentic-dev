@@ -11,7 +11,7 @@ import { StateStore } from "../platform/state-store.js";
 import type { StateStoreApi } from "../platform/state-store.js";
 import { resolveContext } from "./resolve-context.js";
 import { recordEnvironment } from "./state-hooks.js";
-import { resetPathActions, withJsonReport } from "./json-report.js";
+import { resetPathActions, resetPathMode, withJsonReport } from "./json-report.js";
 import type { RuntimeError, SharedDatabaseProtectionError } from "../errors/errors.js";
 
 export const guardReset = (
@@ -129,6 +129,8 @@ export const resetDbCommand = Command.make(
           say: report.say,
         });
         yield* Effect.forEach(resetPathActions(path), report.action);
+        yield* report.setExtra("mode", resetPathMode(path));
+        yield* report.setExtra("templateKey", computeTemplateKey(recipe));
         yield* report.say(`Done. Odoo URL: ${ctx.odooBaseUrl}/web?db=${ctx.databaseName}`);
       }),
     ),

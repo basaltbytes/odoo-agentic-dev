@@ -24,7 +24,12 @@ import { StateStore } from "../platform/state-store.js";
 import type { StateStoreApi } from "../platform/state-store.js";
 import type { OdooLifecycleApi } from "../platform/odoo-lifecycle.js";
 import { runSetup } from "./setup.js";
+import { withStdoutRedirectedToStderr } from "./json-report.js";
 import type { CommandReporter } from "./json-report.js";
+
+// the stdout→stderr stream-swap now lives in json-report (shared with --json);
+// re-exported here so existing importers keep working
+export { withStdoutRedirectedToStderr } from "./json-report.js";
 
 // --- hook payloads ----------------------------------------------------------
 
@@ -134,28 +139,6 @@ export const makeStepLogger = (
           mkdirSync(dirname(logFile), { recursive: true });
           appendFileSync(logFile, `${line}\n`);
         });
-
-/**
- * Hook-mode stdout purity (the `exec 1>&2` trick): everything written to
- * process.stdout while the effect runs — Console.log, streamed child output —
- * lands on stderr instead; the original writer is restored afterwards so the
- * caller can print the single contractual stdout line.
- */
-export const withStdoutRedirectedToStderr = <A, E, R>(
-  effect: Effect.Effect<A, E, R>,
-): Effect.Effect<A, E, R> =>
-  Effect.suspend(() => {
-    const original = process.stdout.write;
-    process.stdout.write = ((...args: Parameters<typeof process.stderr.write>) =>
-      process.stderr.write(...args)) as typeof process.stdout.write;
-    return effect.pipe(
-      Effect.ensuring(
-        Effect.sync(() => {
-          process.stdout.write = original;
-        }),
-      ),
-    );
-  });
 
 /** Read stdin to the end (the hook payload arrives this way). */
 const readStdinText: Effect.Effect<string, ConfigValidationError> = Effect.tryPromise({
@@ -286,6 +269,7 @@ export const runWorktreeCreate = (
         action: () => Effect.void,
         setContext: () => Effect.void,
         setExitCode: () => Effect.void,
+        setExtra: () => Effect.void,
       };
       yield* runSetup(
         worktree.recipe,

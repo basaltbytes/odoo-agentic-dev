@@ -11,10 +11,11 @@ import type { CommandRunnerApi } from "../platform/command-runner.js";
 import type { OdooLifecycleApi } from "../platform/odoo-lifecycle.js";
 import type { StateStoreApi } from "../platform/state-store.js";
 import type { GitApi } from "../platform/git.js";
+import { computeTemplateKey } from "../core/environment.js";
 import { resolveContext } from "./resolve-context.js";
 import { guardReset, runResetFlow } from "./reset-db.js";
 import { recordEnvironment, warnOrAutoClean } from "./state-hooks.js";
-import { resetPathActions, withJsonReport } from "./json-report.js";
+import { resetPathActions, resetPathMode, withJsonReport } from "./json-report.js";
 import type { CommandReporter } from "./json-report.js";
 import { buildInfoText } from "./info.js";
 
@@ -113,6 +114,8 @@ export const runSetup = (
             say: report.say,
           });
           yield* Effect.forEach(resetPathActions(path), report.action);
+          yield* report.setExtra("mode", resetPathMode(path));
+          yield* report.setExtra("templateKey", computeTemplateKey(recipe));
           break;
         }
       }

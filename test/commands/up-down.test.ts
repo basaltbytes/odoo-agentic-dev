@@ -1,9 +1,10 @@
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { buildUpPlan } from "../../src/commands/up.js";
+import { Effect } from "effect";
+import { buildUpPlan, guardUpJson } from "../../src/commands/up.js";
 import { buildDownArgs, finalizeDownState, guardDown } from "../../src/commands/down.js";
 import { rowFromContext } from "../../src/commands/state-hooks.js";
-import { SharedDatabaseProtectionError } from "../../src/errors/errors.js";
+import { ConfigValidationError, SharedDatabaseProtectionError } from "../../src/errors/errors.js";
 import { makeFakeStateStore } from "../../src/testing/fake-adapters.js";
 import { makeCtx, makeRecipe, runSyncFailure, runSyncSuccess, runWith } from "../helpers.js";
 
@@ -52,6 +53,47 @@ describe("buildUpPlan", () => {
     });
     expect(plan.upArgs).toEqual(["up", "-d", "odoo"]);
     expect(plan.companions).toEqual([]);
+  });
+});
+
+describe("guardUpJson", () => {
+  it("rejects attached --json with a --detach hint", () => {
+    const error = runSyncFailure(guardUpJson({ json: true, detach: false }));
+    expect(error).toBeInstanceOf(ConfigValidationError);
+    expect(error.message).toContain("--detach");
+  });
+
+  it("allows --detach --json, plain --json-less attached, and detached without json", () => {
+    expect(() => runSyncSuccess(guardUpJson({ json: true, detach: true }))).not.toThrow();
+    expect(() => runSyncSuccess(guardUpJson({ json: false, detach: false }))).not.toThrow();
+    expect(() => runSyncSuccess(guardUpJson({ json: false, detach: true }))).not.toThrow();
+  });
+
+  it("the rejection surfaces as ok:false JSON when wrapped in withJsonReport", async () => {
+    const { withJsonReport } = await import("../../src/commands/json-report.js");
+    const log = [] as Array<string>;
+    const spy = (line: unknown) => {
+      log.push(String(line));
+    };
+    const original = console.log;
+    console.log = spy as typeof console.log;
+    try {
+      await Effect.runPromise(
+        withJsonReport("up", true, () => guardUpJson({ json: true, detach: false })),
+      ).then(
+        () => {
+          throw new Error("expected rejection");
+        },
+        () => {},
+      );
+    } finally {
+      console.log = original;
+    }
+    const parsed = JSON.parse(log.at(-1)!);
+    expect(parsed.ok).toBe(false);
+    expect(parsed.command).toBe("up");
+    expect(parsed.error.tag).toBe("ConfigValidationError");
+    expect(parsed.error.message).toContain("--detach");
   });
 });
 

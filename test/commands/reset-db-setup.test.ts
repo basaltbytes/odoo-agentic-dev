@@ -39,6 +39,27 @@ describe("guardReset", () => {
     expect(() => runSyncSuccess(guardReset(recipe, onMain, true))).not.toThrow();
     expect(() => runSyncSuccess(guardReset(recipe, onFeature, false))).not.toThrow();
   });
+
+  it("a shared-db refusal in --json mode emits ok:false JSON on stdout AND re-fails (drives exit 1)", async () => {
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    await expect(
+      Effect.runPromise(
+        withJsonReport("reset-db", true, (report) =>
+          Effect.gen(function* () {
+            yield* report.setContext(onMain);
+            yield* guardReset(recipe, onMain, false);
+          }),
+        ),
+      ),
+    ).rejects.toThrow(/shared database/);
+    expect(log).toHaveBeenCalledTimes(1);
+    const parsed = JSON.parse(String(log.mock.calls[0]![0]));
+    expect(parsed.ok).toBe(false);
+    expect(parsed.command).toBe("reset-db");
+    expect(parsed.error.tag).toBe("SharedDatabaseProtectionError");
+    expect(parsed.database).toBe(onMain.databaseName);
+    vi.restoreAllMocks();
+  });
 });
 
 describe("parseModulesFlag", () => {
@@ -142,7 +163,13 @@ describe("runSetup", () => {
       templateKey: computeTemplateKey(simple),
     });
     const parsed = JSON.parse(String(log.mock.calls.at(-1)![0]));
+    expect(parsed.command).toBe("setup");
     expect(parsed.actions).toContain("full-init");
     expect(parsed.actions).toContain("snapshot-template");
+    // plan A2 extras: a full init reports mode "full-init" + the template key
+    // (identity fields like composeProjectName are set by the command body's
+    // report.setContext, which this direct runSetup harness does not call)
+    expect(parsed.mode).toBe("full-init");
+    expect(parsed.templateKey).toBe(computeTemplateKey(simple));
   });
 });

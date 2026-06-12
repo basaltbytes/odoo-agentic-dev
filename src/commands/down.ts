@@ -68,6 +68,7 @@ export const downCommand = Command.make(
         yield* compose.stream(ref, buildDownArgs(flags));
         yield* report.action("compose-down");
         if (flags.volumes) yield* report.action("remove-volumes");
+        yield* report.setExtra("volumesRemoved", flags.volumes);
         yield* finalizeDownState(ctx, flags);
       }),
     ),

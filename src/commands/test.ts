@@ -93,10 +93,11 @@ export const testCommand = Command.make(
         );
         yield* report.action("run-tests");
         yield* report.setExitCode(exitCode);
-        // in json mode the test tail moves to stderr so stdout stays parseable
-        if (stdoutTail.length > 0) {
-          (report.json ? process.stderr : process.stdout).write(stdoutTail + "\n");
-        }
+        yield* report.setExtra("stdoutTail", stdoutTail);
+        yield* report.setExtra("stderrTail", stderrTail);
+        // in json mode the stream-swap already routes process.stdout writes to
+        // stderr, so the human-facing tail never reaches the JSON stdout line
+        if (stdoutTail.length > 0) process.stdout.write(stdoutTail + "\n");
         if (stderrTail.length > 0) process.stderr.write(stderrTail + "\n");
         if (exitCode !== 0) {
           yield* Console.error(`Tests failed (odoo exit ${exitCode})`);
