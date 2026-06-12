@@ -115,7 +115,7 @@ export const OdooLifecycleLive = Layer.effect(
           if (recipe.database.postInit.length === 0) return;
           const ref = yield* compose.prepareComposeFile(recipe, ctx);
           for (const hook of recipe.database.postInit) {
-            const expanded = expandHook(hook);
+            const expanded = expandHook(hook, ctx.env);
             switch (expanded.kind) {
               case "odoo-shell": {
                 yield* runShellCode(recipe, ctx, ref, expanded.code);

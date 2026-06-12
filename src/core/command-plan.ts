@@ -1,4 +1,5 @@
 import type { PostInitHook } from "./project-recipe.js";
+import { substituteEnvTokens } from "./worktree-context.js";
 
 // All database names reaching these builders have passed assertSafeDatabaseName
 // (^[a-z][a-z0-9_]*$), which is what makes the string interpolation safe.
@@ -145,14 +146,17 @@ export type ExpandedHook =
       readonly cwd: string | undefined;
     };
 
-export const expandHook = (hook: PostInitHook): ExpandedHook => {
+export const expandHook = (hook: PostInitHook, env: Record<string, string> = {}): ExpandedHook => {
   switch (hook.type) {
     case "odoo-shell-file":
       return { kind: "odoo-shell-file", file: hook.file };
     case "odoo-shell-inline":
       return { kind: "odoo-shell", code: hook.code };
     case "set-ir-config-parameter":
-      return { kind: "odoo-shell", code: setIrConfigParameterCode(hook.key, hook.value) };
+      return {
+        kind: "odoo-shell",
+        code: setIrConfigParameterCode(hook.key, substituteEnvTokens(hook.value, env)),
+      };
     case "command":
       return { kind: "host-command", command: hook.command, args: hook.args, cwd: hook.cwd };
   }

@@ -168,23 +168,31 @@ describe("sql/argv builders", () => {
 });
 
 describe("expandHook", () => {
+  const ctxEnv = {
+    ODOO_DATABASE: "kl_x",
+    E2E_BASE_URL: "http://localhost:28128",
+  };
+
   it("passes through shell file and inline hooks", () => {
-    expect(expandHook({ type: "odoo-shell-file", file: "scripts/x.py" })).toEqual({
+    expect(expandHook({ type: "odoo-shell-file", file: "scripts/x.py" }, ctxEnv)).toEqual({
       kind: "odoo-shell-file",
       file: "scripts/x.py",
     });
-    expect(expandHook({ type: "odoo-shell-inline", code: "print(1)" })).toEqual({
+    expect(expandHook({ type: "odoo-shell-inline", code: "print(1)" }, ctxEnv)).toEqual({
       kind: "odoo-shell",
       code: "print(1)",
     });
   });
 
   it("set-ir-config-parameter expands to committing shell code", () => {
-    const expanded = expandHook({
-      type: "set-ir-config-parameter",
-      key: "web.base.url",
-      value: "http://x",
-    });
+    const expanded = expandHook(
+      {
+        type: "set-ir-config-parameter",
+        key: "web.base.url",
+        value: "http://x",
+      },
+      ctxEnv,
+    );
     expect(expanded).toEqual({
       kind: "odoo-shell",
       code: setIrConfigParameterCode("web.base.url", "http://x"),
@@ -193,9 +201,29 @@ describe("expandHook", () => {
     expect((expanded as { code: string }).code).toContain("env.cr.commit()");
   });
 
+  it("substitutes context env tokens in set-ir-config-parameter values", () => {
+    const expanded = expandHook(
+      { type: "set-ir-config-parameter", key: "app.mobile.url", value: "$E2E_BASE_URL" },
+      ctxEnv,
+    ) as { code: string };
+    expect(expanded.code).toContain('set_param("app.mobile.url", "http://localhost:28128")');
+    // unknown tokens stay verbatim (substituteEnvTokens semantics)
+    const unknown = expandHook(
+      { type: "set-ir-config-parameter", key: "k", value: "$NOT_SET" },
+      ctxEnv,
+    ) as { code: string };
+    expect(unknown.code).toContain('set_param("k", "$NOT_SET")');
+  });
+
+  it("inline scripts are not substituted (they manage their own env)", () => {
+    expect(
+      expandHook({ type: "odoo-shell-inline", code: 'print("$ODOO_DATABASE")' }, ctxEnv),
+    ).toEqual({ kind: "odoo-shell", code: 'print("$ODOO_DATABASE")' });
+  });
+
   it("command hooks become host commands", () => {
     expect(
-      expandHook({ type: "command", command: "pnpm", args: ["seed"], cwd: "frontend" }),
+      expandHook({ type: "command", command: "pnpm", args: ["seed"], cwd: "frontend" }, ctxEnv),
     ).toEqual({ kind: "host-command", command: "pnpm", args: ["seed"], cwd: "frontend" });
   });
 });
