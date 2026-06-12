@@ -17,27 +17,61 @@ const hostPath = (host: string): string =>
  * Drift-proofing labels stamped on every generated service and volume so
  * `list`/`prune`/`doctor` can reconcile Docker reality against the state
  * registry (and adopt stacks whose rows were lost) without the compose file.
+ *
+ * Portable mode (for `eject`) keeps the static identity labels but interpolates
+ * the database and omits `root-dir`/`branch` (not part of the exported compose
+ * env), so the ejected file works across worktrees.
  */
 export const buildOadLabels = (
   recipe: OdooAgenticDevConfig,
   ctx: WorktreeContext,
-): Record<string, string> => ({
-  "dev.basaltbytes.oad": "1",
-  "dev.basaltbytes.oad.project-id": recipe.project.id,
-  "dev.basaltbytes.oad.database": ctx.databaseName,
-  "dev.basaltbytes.oad.root-dir": ctx.rootDir,
-  "dev.basaltbytes.oad.branch": ctx.branch ?? "",
-});
+  options?: { readonly portable?: boolean },
+): Record<string, string> =>
+  options?.portable === true
+    ? {
+        "dev.basaltbytes.oad": "1",
+        "dev.basaltbytes.oad.project-id": recipe.project.id,
+        "dev.basaltbytes.oad.database": "${ODOO_DATABASE}",
+      }
+    : {
+        "dev.basaltbytes.oad": "1",
+        "dev.basaltbytes.oad.project-id": recipe.project.id,
+        "dev.basaltbytes.oad.database": ctx.databaseName,
+        "dev.basaltbytes.oad.root-dir": ctx.rootDir,
+        "dev.basaltbytes.oad.branch": ctx.branch ?? "",
+      };
 
+/**
+ * Build the compose model for a worktree.
+ *
+ * `options.portable` emits compose interpolations (`${KEY:?}`) instead of the
+ * current worktree's baked database/port/env literals, so the result is a
+ * worktree-independent file the `eject` command can write into a repo.
+ * `options.dockerfilePath`, when set, overrides whatever `build.dockerfile`
+ * path would otherwise be emitted (eject points it at the ejected Dockerfile).
+ */
 export const buildComposeModel = (
   recipe: OdooAgenticDevConfig,
   ctx: WorktreeContext,
+  options?: { readonly portable?: boolean; readonly dockerfilePath?: string },
 ): ComposeModel => {
+  const portable = options?.portable === true;
   const dbService = recipe.odoo.databaseServiceName;
   const odooService = recipe.odoo.serviceName;
-  const labels = buildOadLabels(recipe, ctx);
+  const labels = buildOadLabels(recipe, ctx, { portable });
+
+  const databaseArg = portable ? "${ODOO_DATABASE:?}" : ctx.databaseName;
+  const portMapping = portable
+    ? "127.0.0.1:${ODOO_HTTP_PORT:?}:8069"
+    : `127.0.0.1:${ctx.odooHttpPort}:8069`;
+  // each exported context key resolves at compose runtime via `${KEY:?}`;
+  // the static HOST/USER/PASSWORD stay literal in both modes
+  const contextEnv: Record<string, string> = portable
+    ? Object.fromEntries(Object.keys(ctx.env).map((key) => [key, `\${${key}:?}`]))
+    : ctx.env;
 
   const dockerfile =
+    options?.dockerfilePath ??
     recipe.odoo.dockerfile ??
     (recipe.odoo.build !== null ? GENERATED_DOCKERFILE_RELATIVE_PATH : null);
   const imageOrBuild: Record<string, unknown> =
@@ -69,17 +103,17 @@ export const buildComposeModel = (
         depends_on: { [dbService]: { condition: "service_healthy" } },
         // the official image's entrypoint turns HOST/USER/PASSWORD into db args;
         // the full context env rides along for post-init scripts and in-container tests
-        environment: { HOST: dbService, USER: "odoo", PASSWORD: "odoo", ...ctx.env },
+        environment: { HOST: dbService, USER: "odoo", PASSWORD: "odoo", ...contextEnv },
         // serve exactly this worktree's database, with the db manager hidden
         command: [
           "odoo",
-          `--database=${ctx.databaseName}`,
+          `--database=${databaseArg}`,
           "--no-database-list",
           `--addons-path=${containerAddonsPath(recipe)}`,
           ...(recipe.odoo.dev === false ? [] : [`--dev=${recipe.odoo.dev}`]),
         ],
         // loopback-only: never expose the dev Odoo on the LAN by default
-        ports: [`127.0.0.1:${ctx.odooHttpPort}:8069`],
+        ports: [portMapping],
         volumes: [
           "web-data:/var/lib/odoo",
           ...recipe.odoo.addons.map((mount) => `${hostPath(mount.host)}:${mount.container}`),

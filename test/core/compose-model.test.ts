@@ -129,3 +129,104 @@ describe("buildComposeModel", () => {
     expect(renderComposeYaml(model)).toBe(renderComposeYaml(buildComposeModel(recipe, ctx)));
   });
 });
+
+describe("buildComposeModel (portable mode)", () => {
+  const portable = buildComposeModel(recipe, ctx, { portable: true });
+
+  it("interpolates the database into the command instead of baking it", () => {
+    const command = (portable.services["odoo"] as Record<string, any>).command as Array<string>;
+    expect(command).toContain("--database=${ODOO_DATABASE:?}");
+    expect(command.some((arg) => arg.includes(ctx.databaseName))).toBe(false);
+  });
+
+  it("interpolates the http port into the ports entry instead of baking it", () => {
+    const odoo = portable.services["odoo"] as Record<string, any>;
+    expect(odoo.ports).toEqual(["127.0.0.1:${ODOO_HTTP_PORT:?}:8069"]);
+  });
+
+  it("maps each context env key to a required interpolation, keeping HOST/USER/PASSWORD literal", () => {
+    const env = (portable.services["odoo"] as Record<string, any>).environment as Record<
+      string,
+      string
+    >;
+    expect(env.HOST).toBe("db");
+    expect(env.USER).toBe("odoo");
+    expect(env.PASSWORD).toBe("odoo");
+    for (const key of Object.keys(ctx.env)) {
+      expect(env[key]).toBe(`\${${key}:?}`);
+    }
+    // and the literal derived values never leak through
+    expect(env.ODOO_DATABASE).toBe("${ODOO_DATABASE:?}");
+    expect(env.ODOO_HTTP_PORT).toBe("${ODOO_HTTP_PORT:?}");
+  });
+
+  it("keeps static labels literal, interpolates database, and omits root-dir/branch", () => {
+    const expected = {
+      "dev.basaltbytes.oad": "1",
+      "dev.basaltbytes.oad.project-id": "kriss-laure",
+      "dev.basaltbytes.oad.database": "${ODOO_DATABASE}",
+    };
+    expect((portable.services["odoo"] as Record<string, unknown>)["labels"]).toEqual(expected);
+    expect((portable.services["db"] as Record<string, unknown>)["labels"]).toEqual(expected);
+    expect(portable.volumes).toEqual({
+      "db-data": { labels: expected },
+      "web-data": { labels: expected },
+    });
+    const odooLabels = (portable.services["odoo"] as Record<string, any>)["labels"] as Record<
+      string,
+      string
+    >;
+    expect(odooLabels["dev.basaltbytes.oad.root-dir"]).toBeUndefined();
+    expect(odooLabels["dev.basaltbytes.oad.branch"]).toBeUndefined();
+  });
+
+  it("bakes neither the database name nor the port number anywhere in the YAML", () => {
+    const yaml = renderComposeYaml(portable);
+    expect(yaml).not.toContain(ctx.databaseName);
+    expect(yaml).not.toContain(String(ctx.odooHttpPort));
+    expect(yaml).not.toContain("/work/kl");
+    expect(yaml).not.toContain("feature/x");
+  });
+
+  it("renders YAML that parses back to the model and is deterministic", () => {
+    expect(parse(renderComposeYaml(portable))).toEqual(JSON.parse(JSON.stringify(portable)));
+    expect(renderComposeYaml(portable)).toBe(
+      renderComposeYaml(buildComposeModel(recipe, ctx, { portable: true })),
+    );
+  });
+
+  it("points build.dockerfile at the dockerfilePath override when provided", () => {
+    const built = makeRecipe({
+      project: { id: "x", dbPrefix: "x" },
+      odoo: {
+        version: "18.0",
+        build: { pipPackages: ["requests"] },
+        addons: [{ host: "addons", container: "/mnt/c" }],
+      },
+    });
+    const m = buildComposeModel(built, makeCtx(built, "b"), {
+      portable: true,
+      dockerfilePath: "Dockerfile.odoo",
+    });
+    expect((m.services["odoo"] as Record<string, unknown>)["build"]).toEqual({
+      context: ".",
+      dockerfile: "Dockerfile.odoo",
+    });
+  });
+
+  it("falls back to the generated dockerfile path when no override is given", () => {
+    const built = makeRecipe({
+      project: { id: "x", dbPrefix: "x" },
+      odoo: {
+        version: "18.0",
+        build: { pipPackages: ["requests"] },
+        addons: [{ host: "addons", container: "/mnt/c" }],
+      },
+    });
+    const m = buildComposeModel(built, makeCtx(built, "b"), { portable: true });
+    expect((m.services["odoo"] as Record<string, unknown>)["build"]).toEqual({
+      context: ".",
+      dockerfile: GENERATED_DOCKERFILE_RELATIVE_PATH,
+    });
+  });
+});
