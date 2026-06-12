@@ -54,6 +54,20 @@ describe("loadRecipe", () => {
     expect(recipe.odoo.serviceName).toBe("odoo"); // defaults applied
   });
 
+  // bootstrap killer: fresh worktrees / dlx runs have no node_modules, yet the
+  // config imports the package by bare name — the loader aliases it to itself
+  it("loads a config importing the bare package name with zero node_modules nearby", async () => {
+    const dir = makeProject(`
+import { defineConfig } from "@basaltbytes/odoo-agentic-dev"
+export default defineConfig({
+  project: { id: "bare-import", dbPrefix: "bare" },
+  odoo: { version: "18.0", addons: [{ host: "addons", container: "/mnt/extra-addons/custom" }] }
+})
+`);
+    const { recipe } = await Effect.runPromise(loadRecipe({ cwd: dir, env: {} }));
+    expect(recipe.project.id).toBe("bare-import");
+  });
+
   it("honors an explicit --config path", async () => {
     const dir = makeProject(VALID, "custom.config.ts");
     const { recipe } = await Effect.runPromise(
