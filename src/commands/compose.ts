@@ -2,7 +2,9 @@ import { Effect } from "effect";
 import { Argument, Command, Flag } from "effect/unstable/cli";
 import type { OdooAgenticDevConfig } from "../core/project-recipe.js";
 import type { WorktreeContext } from "../core/worktree-context.js";
+import { ConfigValidationError } from "../errors/errors.js";
 import type { RuntimeError } from "../errors/errors.js";
+import { trailingOperands } from "./trailing-args.js";
 import type { CommandRunnerApi } from "../platform/command-runner.js";
 import type { DockerComposeApi } from "../platform/docker-compose.js";
 import type { StateStoreApi } from "../platform/state-store.js";
@@ -26,15 +28,25 @@ export const composeCommand = Command.make(
   "compose",
   {
     args: Argument.string("args").pipe(
-      Argument.variadic({ min: 1 }),
+      Argument.variadic(),
       Argument.withDescription("docker compose arguments (pass them after --)"),
     ),
     config: Flag.string("config").pipe(Flag.optional),
   },
   (flags) =>
     Effect.gen(function* () {
+      const args = [...flags.args, ...trailingOperands()];
+      if (args.length === 0) {
+        return yield* Effect.fail(
+          new ConfigValidationError({
+            issues: [
+              "compose requires docker compose arguments, e.g. `odoo-agentic-dev compose -- logs -f`",
+            ],
+          }),
+        );
+      }
       const { ctx, recipe } = yield* resolveContext(flags.config);
-      yield* runCompose(recipe, ctx, flags.args);
+      yield* runCompose(recipe, ctx, args);
     }),
 ).pipe(
   Command.withDescription("docker compose passthrough scoped to this worktree's compose project"),

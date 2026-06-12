@@ -4,6 +4,7 @@ import type { OdooAgenticDevConfig } from "../core/project-recipe.js";
 import type { WorktreeContext } from "../core/worktree-context.js";
 import { resolveContext } from "./resolve-context.js";
 import { runInteractivePassthrough } from "./shell.js";
+import { trailingOperands } from "./trailing-args.js";
 
 export const buildPsqlArgs = (
   recipe: OdooAgenticDevConfig,
@@ -32,6 +33,7 @@ export const psqlCommand = Command.make(
   (flags) =>
     Effect.gen(function* () {
       const { ctx, recipe } = yield* resolveContext(flags.config);
-      yield* runInteractivePassthrough(recipe, ctx, buildPsqlArgs(recipe, ctx, flags.args));
+      const extraArgs = [...flags.args, ...trailingOperands()];
+      yield* runInteractivePassthrough(recipe, ctx, buildPsqlArgs(recipe, ctx, extraArgs));
     }),
 );

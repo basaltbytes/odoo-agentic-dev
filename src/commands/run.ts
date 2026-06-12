@@ -1,8 +1,9 @@
 import { readFileSync } from "node:fs";
 import { Effect } from "effect";
 import { Argument, Command, Flag } from "effect/unstable/cli";
-import { ConfigLoadError } from "../errors/errors.js";
+import { ConfigLoadError, ConfigValidationError } from "../errors/errors.js";
 import type { RuntimeError } from "../errors/errors.js";
+import { trailingOperands } from "./trailing-args.js";
 import type { OdooAgenticDevConfig } from "../core/project-recipe.js";
 import type { WorktreeContext } from "../core/worktree-context.js";
 import { CommandRunner } from "../platform/command-runner.js";
@@ -88,7 +89,7 @@ export const runCommand = Command.make(
   "run",
   {
     argv: Argument.string("command").pipe(
-      Argument.variadic({ min: 1 }),
+      Argument.variadic(),
       Argument.withDescription("host command and its arguments (pass them after --)"),
     ),
     envFile: Flag.string("env-file").pipe(
@@ -101,7 +102,15 @@ export const runCommand = Command.make(
   },
   (flags) =>
     Effect.gen(function* () {
+      const argv = [...flags.argv, ...trailingOperands()];
+      if (argv.length === 0) {
+        return yield* Effect.fail(
+          new ConfigValidationError({
+            issues: ["run requires a command, e.g. `odoo-agentic-dev run -- pnpm test:e2e`"],
+          }),
+        );
+      }
       const { ctx, recipe } = yield* resolveContext(flags.config);
-      yield* runHostCommand(recipe, ctx, { envFiles: flags.envFile, argv: flags.argv });
+      yield* runHostCommand(recipe, ctx, { envFiles: flags.envFile, argv });
     }),
 ).pipe(Command.withDescription("execute a host command with the worktree env injected"));

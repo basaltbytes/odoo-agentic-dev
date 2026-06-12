@@ -135,6 +135,27 @@ export default {
     expect(parsed.ok).toBe(result.status === 0);
   });
 
+  // regression: the v4 beta lexer hands post-`--` operands to the ROOT
+  // command, so without our trailing-args recovery `run -- <cmd>` parses zero
+  // argv values and dies before spawning anything
+  it("run -- <command> executes the command with the worktree env injected", () => {
+    const result = spawn(["run", "--", "node", "-e", "console.log(process.env.ODOO_DATABASE)"]);
+    expect(result.status).toBe(0);
+    expect(result.stdout.trim()).toBe("fx_demo");
+  });
+
+  it("run without a command exits 1 with guidance", () => {
+    const result = spawn(["run"]);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("requires a command");
+  });
+
+  it("compose without trailing args exits 1 with guidance (no docker needed)", () => {
+    const result = spawn(["compose"]);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("requires docker compose arguments");
+  });
+
   it("worktree nests two subcommand levels (create/remove reachable under worktree)", () => {
     const out = run(["worktree", "--help"]);
     expect(out).toContain("create");
