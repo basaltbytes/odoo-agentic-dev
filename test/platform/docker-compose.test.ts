@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
@@ -47,6 +47,7 @@ describe("parseLabeledPs", () => {
         database: "fx_a",
         rootDir: "/w",
         branch: "",
+        shared: null,
       },
     ]);
   });
@@ -133,6 +134,29 @@ describe("DockerComposeLive", () => {
       }),
     );
     expect(ref.composeFile).toBe(join(rootDir, "docker-compose.worktree.yml"));
+  });
+
+  it("prepareComposeFile still writes the generated Dockerfile for project-supplied compose files", async () => {
+    const { ctx, rootDir, run } = makeEnv();
+    writeFileSync(join(rootDir, "docker-compose.worktree.yml"), "services: {}\n");
+    const recipe = makeRecipe({
+      project: { id: "fixture", dbPrefix: "fx" },
+      odoo: {
+        version: "18.0",
+        build: { pipPackages: ["requests"] },
+        addons: [{ host: "addons", container: "/mnt/c" }],
+      },
+      compose: { file: "docker-compose.worktree.yml" },
+    });
+    await run(
+      Effect.gen(function* () {
+        const dc = yield* DockerCompose;
+        return yield* dc.prepareComposeFile(recipe, ctx);
+      }),
+    );
+    expect(
+      readFileSync(join(rootDir, ".odoo-agentic-dev", "Dockerfile.generated"), "utf8"),
+    ).toContain("requests");
   });
 
   it("run issues exact argv and fails on non-zero exit", async () => {
@@ -259,7 +283,7 @@ describe("DockerComposeLive", () => {
     expect(error).toBeInstanceOf(ComposeCommandError);
   });
 
-  it("removeByLabel removes containers then volumes by compose-project label", async () => {
+  it("removeByLabel removes containers then volumes by compose-project and oad labels", async () => {
     const { recording, run } = makeEnv((spec) => {
       if (spec.args[0] === "ps") return { exitCode: 0, stdout: "c1\nc2\n", stderr: "" };
       if (spec.args[0] === "volume" && spec.args[1] === "ls") {
@@ -274,9 +298,24 @@ describe("DockerComposeLive", () => {
       }),
     );
     expect(recording.calls.map((c) => c.args)).toEqual([
-      ["ps", "-aq", "--filter", "label=com.docker.compose.project=kl_gone"],
+      [
+        "ps",
+        "-aq",
+        "--filter",
+        "label=com.docker.compose.project=kl_gone",
+        "--filter",
+        "label=dev.basaltbytes.oad=1",
+      ],
       ["rm", "-f", "c1", "c2"],
-      ["volume", "ls", "-q", "--filter", "label=com.docker.compose.project=kl_gone"],
+      [
+        "volume",
+        "ls",
+        "-q",
+        "--filter",
+        "label=com.docker.compose.project=kl_gone",
+        "--filter",
+        "label=dev.basaltbytes.oad=1",
+      ],
       ["volume", "rm", "v1"],
     ]);
   });
@@ -300,6 +339,7 @@ describe("DockerComposeLive", () => {
       "dev.basaltbytes.oad.database=kl_x",
       "dev.basaltbytes.oad.root-dir=/work/x",
       "dev.basaltbytes.oad.branch=feature/x",
+      "dev.basaltbytes.oad.shared=true",
     ].join(",");
     const { recording, run } = makeEnv((spec) =>
       spec.args[0] === "ps"
@@ -323,6 +363,7 @@ describe("DockerComposeLive", () => {
         database: "kl_x",
         rootDir: "/work/x",
         branch: "feature/x",
+        shared: true,
       },
     ]);
     expect(recording.calls.at(-1)).toMatchObject({

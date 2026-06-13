@@ -4,7 +4,7 @@ import { Effect } from "effect";
 import { buildUpPlan, guardUpJson } from "../../src/commands/up.js";
 import { buildDownArgs, finalizeDownState, guardDown } from "../../src/commands/down.js";
 import { rowFromContext } from "../../src/commands/state-hooks.js";
-import { ConfigValidationError, SharedDatabaseProtectionError } from "../../src/errors/errors.js";
+import { SharedDatabaseProtectionError, UsageError } from "../../src/errors/errors.js";
 import { makeFakeStateStore } from "../../src/testing/fake-adapters.js";
 import { makeCtx, makeRecipe, runSyncFailure, runSyncSuccess, runWith } from "../helpers.js";
 
@@ -59,7 +59,7 @@ describe("buildUpPlan", () => {
 describe("guardUpJson", () => {
   it("rejects attached --json with a --detach hint", () => {
     const error = runSyncFailure(guardUpJson({ json: true, detach: false }));
-    expect(error).toBeInstanceOf(ConfigValidationError);
+    expect(error).toBeInstanceOf(UsageError);
     expect(error.message).toContain("--detach");
   });
 
@@ -92,7 +92,7 @@ describe("guardUpJson", () => {
     const parsed = JSON.parse(log.at(-1)!);
     expect(parsed.ok).toBe(false);
     expect(parsed.command).toBe("up");
-    expect(parsed.error.tag).toBe("ConfigValidationError");
+    expect(parsed.error.tag).toBe("UsageError");
     expect(parsed.error.message).toContain("--detach");
   });
 });

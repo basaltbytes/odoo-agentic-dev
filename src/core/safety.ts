@@ -10,10 +10,14 @@ export const assertSharedDatabaseAllowed = (options: {
   readonly databaseName: string;
   readonly sharedDatabase: string | null;
   readonly allowShared: boolean;
+  /** false permits first creation of a configured shared database */
+  readonly databaseExists?: boolean | undefined;
   /** command name for the error message, e.g. "reset-db" */
   readonly action: string;
 }): Effect.Effect<void, SharedDatabaseProtectionError> =>
-  isSharedDatabase(options.databaseName, options.sharedDatabase) && !options.allowShared
+  isSharedDatabase(options.databaseName, options.sharedDatabase) &&
+  !options.allowShared &&
+  options.databaseExists !== false
     ? Effect.fail(
         new SharedDatabaseProtectionError({
           database: options.databaseName,

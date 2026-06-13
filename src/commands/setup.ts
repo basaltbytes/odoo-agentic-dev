@@ -8,12 +8,12 @@ import { DockerCompose } from "../platform/docker-compose.js";
 import type { DockerComposeApi } from "../platform/docker-compose.js";
 import { CommandRunner, runInheritedOrFail } from "../platform/command-runner.js";
 import type { CommandRunnerApi } from "../platform/command-runner.js";
+import { OdooLifecycle } from "../platform/odoo-lifecycle.js";
 import type { OdooLifecycleApi } from "../platform/odoo-lifecycle.js";
 import type { StateStoreApi } from "../platform/state-store.js";
 import type { GitApi } from "../platform/git.js";
-import { computeTemplateKey } from "../core/environment.js";
 import { resolveContext } from "./resolve-context.js";
-import { guardReset, runResetFlow } from "./reset-db.js";
+import { computeTemplateKeyForContext, guardReset, runResetFlow } from "./reset-db.js";
 import { recordEnvironment, warnOrAutoClean } from "./state-hooks.js";
 import { resetPathActions, resetPathMode, withJsonReport } from "./json-report.js";
 import type { CommandReporter } from "./json-report.js";
@@ -105,17 +105,23 @@ export const runSetup = (
           break;
         }
         case "reset-db": {
-          yield* guardReset(recipe, ctx, flags.allowShared);
+          const lifecycle = yield* OdooLifecycle;
+          const databaseExists =
+            recipe.project.sharedDatabase === ctx.databaseName && !flags.allowShared
+              ? yield* lifecycle.databaseExists(recipe, ctx)
+              : undefined;
+          yield* guardReset(recipe, ctx, flags.allowShared, { databaseExists });
           const path = yield* runResetFlow(recipe, ctx, {
             noTemplate: flags.noTemplate,
             refreshTemplate: flags.refreshTemplate,
+            build: false,
             modules: undefined,
             withoutDemo: undefined,
             say: report.say,
           });
           yield* Effect.forEach(resetPathActions(path), report.action);
           yield* report.setExtra("mode", resetPathMode(path));
-          yield* report.setExtra("templateKey", computeTemplateKey(recipe));
+          yield* report.setExtra("templateKey", yield* computeTemplateKeyForContext(recipe, ctx));
           break;
         }
       }

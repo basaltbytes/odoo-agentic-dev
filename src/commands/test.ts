@@ -1,6 +1,6 @@
 import { Console, Effect, Option } from "effect";
 import { Command, Flag } from "effect/unstable/cli";
-import { ConfigValidationError } from "../errors/errors.js";
+import { UsageError } from "../errors/errors.js";
 import type { OdooAgenticDevConfig } from "../core/project-recipe.js";
 import type { OdooTestOptions } from "../core/command-plan.js";
 import { OdooLifecycle } from "../platform/odoo-lifecycle.js";
@@ -16,17 +16,15 @@ export const resolveTestOptions = (
     readonly module: string | undefined;
     readonly logLevel: string | undefined;
     readonly profile: string | undefined;
+    readonly build: boolean;
   },
-): Effect.Effect<
-  OdooTestOptions & { readonly extraArgs: ReadonlyArray<string> },
-  ConfigValidationError
-> => {
+): Effect.Effect<OdooTestOptions & { readonly extraArgs: ReadonlyArray<string> }, UsageError> => {
   let extraArgs: ReadonlyArray<string> = [];
   if (flags.profile !== undefined) {
     const profile = recipe.test.profiles[flags.profile];
     if (profile === undefined) {
       return Effect.fail(
-        new ConfigValidationError({
+        new UsageError({
           issues: [
             `unknown test profile "${flags.profile}"; available: ${
               Object.keys(recipe.test.profiles).join(", ") || "(none)"
@@ -42,8 +40,19 @@ export const resolveTestOptions = (
     file: flags.file,
     module: flags.module,
     logLevel: flags.logLevel,
+    build: flags.build,
     extraArgs,
   });
+};
+
+export const detectSkippedBrowserSuite = (output: {
+  readonly stdoutTail: string;
+  readonly stderrTail: string;
+}): string | null => {
+  const combined = `${output.stdoutTail}\n${output.stderrTail}`;
+  return /websocket-client/i.test(combined) && /skipp?ed/i.test(combined)
+    ? "Odoo skipped browser tests because the websocket-client Python package is missing in the image. Add `websocket-client` to odoo.build.pipPackages, rebuild with `oad test --build` or `oad setup`, then rerun the test command."
+    : null;
 };
 
 export const testCommand = Command.make(
@@ -56,6 +65,9 @@ export const testCommand = Command.make(
     profile: Flag.string("profile").pipe(
       Flag.optional,
       Flag.withDescription("recipe-defined test profile"),
+    ),
+    build: Flag.boolean("build").pipe(
+      Flag.withDescription("rebuild the Odoo image before running the test container"),
     ),
     includeDemo: Flag.boolean("include-demo").pipe(
       Flag.withDescription(
@@ -84,6 +96,7 @@ export const testCommand = Command.make(
           module: Option.getOrUndefined(flags.module),
           logLevel: Option.getOrUndefined(flags.logLevel),
           profile: Option.getOrUndefined(flags.profile),
+          build: flags.build,
         });
         const lifecycle = yield* OdooLifecycle;
         const { exitCode, stderrTail, stdoutTail } = yield* lifecycle.runTests(
@@ -91,17 +104,21 @@ export const testCommand = Command.make(
           ctx,
           options,
         );
+        const skipReason =
+          exitCode === 0 ? detectSkippedBrowserSuite({ stdoutTail, stderrTail }) : null;
+        const effectiveExitCode = skipReason === null ? exitCode : 1;
         yield* report.action("run-tests");
-        yield* report.setExitCode(exitCode);
+        yield* report.setExitCode(effectiveExitCode);
         yield* report.setExtra("stdoutTail", stdoutTail);
         yield* report.setExtra("stderrTail", stderrTail);
+        if (skipReason !== null) yield* report.setExtra("skipReason", skipReason);
         // in json mode the stream-swap already routes process.stdout writes to
         // stderr, so the human-facing tail never reaches the JSON stdout line
         if (stdoutTail.length > 0) process.stdout.write(stdoutTail + "\n");
         if (stderrTail.length > 0) process.stderr.write(stderrTail + "\n");
-        if (exitCode !== 0) {
-          yield* Console.error(`Tests failed (odoo exit ${exitCode})`);
-          process.exitCode = exitCode;
+        if (effectiveExitCode !== 0) {
+          yield* Console.error(skipReason ?? `Tests failed (odoo exit ${exitCode})`);
+          process.exitCode = effectiveExitCode;
         } else {
           yield* report.say("Tests passed");
         }

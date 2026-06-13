@@ -9,6 +9,7 @@ import { StateStore } from "../platform/state-store.js";
 import type { StateStoreApi } from "../platform/state-store.js";
 import type { EnvironmentRow } from "../core/environment.js";
 import type { GitState } from "../core/worktree-context.js";
+import { tail } from "../errors/errors.js";
 
 /**
  * CommandRunner fake: records every call; `script` may return a result per
@@ -26,7 +27,11 @@ export const makeRecordingRunner = (
     calls,
     layer: Layer.succeed(CommandRunner, {
       run: (spec) => Effect.sync(() => respond(spec)),
-      runInherited: (spec) => Effect.sync(() => respond(spec).exitCode),
+      runInherited: (spec) =>
+        Effect.sync(() => {
+          const result = respond(spec);
+          return { exitCode: result.exitCode, outputTail: tail(result.stderr || result.stdout) };
+        }),
       runInteractive: (spec) => Effect.sync(() => respond(spec).exitCode),
     }),
   };

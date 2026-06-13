@@ -40,6 +40,15 @@ describe("guardReset", () => {
     expect(() => runSyncSuccess(guardReset(recipe, onFeature, false))).not.toThrow();
   });
 
+  it("allows first creation of a shared database when the database is absent", () => {
+    expect(() =>
+      runSyncSuccess(guardReset(recipe, onMain, false, { databaseExists: false })),
+    ).not.toThrow();
+    expect(
+      runSyncFailure(guardReset(recipe, onMain, false, { databaseExists: true })),
+    ).toBeInstanceOf(SharedDatabaseProtectionError);
+  });
+
   it("a shared-db refusal in --json mode emits ok:false JSON on stdout AND re-fails (drives exit 1)", async () => {
     const log = vi.spyOn(console, "log").mockImplementation(() => {});
     await expect(
@@ -118,6 +127,7 @@ describe("runSetup", () => {
         lifecycleCalls.push(name);
       });
     const lifecycle = Layer.succeed(OdooLifecycle, {
+      databaseExists: () => record("databaseExists").pipe(Effect.as(true)),
       resetDatabase: () => record("resetDatabase"),
       runPostInitHooks: () => record("runPostInitHooks"),
       updateModules: () => record("updateModules"),

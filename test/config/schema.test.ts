@@ -121,6 +121,14 @@ describe("normalizeConfig", () => {
     expect(cfg.cleanup).toEqual({ maxAgeDays: 7, auto: true });
   });
 
+  it("rejects unsafe cleanup ages", () => {
+    for (const maxAgeDays of [0, -1, 1.5]) {
+      const error = runSyncFailure(normalized({ ...minimal, cleanup: { maxAgeDays } }));
+      expect(error).toBeInstanceOf(ConfigValidationError);
+      expect(error.message).toContain("cleanup.maxAgeDays");
+    }
+  });
+
   it("defaults sharedBranches to main/master when sharedDatabase is set", () => {
     const cfg = runSyncSuccess(
       normalized({

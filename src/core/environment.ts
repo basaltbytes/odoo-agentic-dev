@@ -39,10 +39,13 @@ export const templateDbName = (db: string): string => `${db}${TEMPLATE_SUFFIX}`;
 
 /**
  * Identity of a template snapshot: everything baked into the database by a
- * full init (modules, demo data, Odoo version, post-init hooks). Any change
- * here must invalidate existing snapshots.
+ * full init (modules, demo data, Odoo version, post-init hooks, and the Odoo
+ * image identity). Any change here must invalidate existing snapshots.
  */
-export const computeTemplateKey = (recipe: OdooAgenticDevConfig): string =>
+export const computeTemplateKey = (
+  recipe: OdooAgenticDevConfig,
+  imageInputsHash: string | null = null,
+): string =>
   createHash("sha256")
     .update(
       JSON.stringify([
@@ -50,6 +53,13 @@ export const computeTemplateKey = (recipe: OdooAgenticDevConfig): string =>
         recipe.database.withoutDemo,
         recipe.odoo.version,
         recipe.database.postInit,
+        recipe.odoo.baseAddonsPath,
+        recipe.odoo.addons,
+        recipe.odoo.configFile,
+        recipe.odoo.build,
+        recipe.odoo.dockerfile,
+        recipe.odoo.imageName,
+        imageInputsHash,
       ]),
     )
     .digest("hex")

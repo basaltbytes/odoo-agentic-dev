@@ -49,6 +49,7 @@ export type LabeledContainer = {
   readonly rootDir: string | null;
   /** raw label value: "" means "no branch" (callers map it back to null) */
   readonly branch: string | null;
+  readonly shared: boolean | null;
 };
 
 export interface DockerComposeApi {
@@ -152,6 +153,10 @@ export const parseLabeledPs = (stdout: string): Array<LabeledContainer> => {
         database: labels.get("dev.basaltbytes.oad.database") ?? null,
         rootDir: labels.get("dev.basaltbytes.oad.root-dir") ?? null,
         branch: labels.get("dev.basaltbytes.oad.branch") ?? null,
+        shared:
+          labels.get("dev.basaltbytes.oad.shared") === undefined
+            ? null
+            : labels.get("dev.basaltbytes.oad.shared") === "true",
       });
     }
   }
@@ -281,12 +286,15 @@ export const DockerComposeLive = Layer.effect(
 
     const removeByLabel = (composeProject: string): Effect.Effect<void, ComposeCommandError> =>
       Effect.gen(function* () {
-        const filter = `label=com.docker.compose.project=${composeProject}`;
-        const ids = splitLines((yield* dockerRun(["ps", "-aq", "--filter", filter])).stdout);
+        const filters = [
+          "--filter",
+          `label=com.docker.compose.project=${composeProject}`,
+          "--filter",
+          "label=dev.basaltbytes.oad=1",
+        ];
+        const ids = splitLines((yield* dockerRun(["ps", "-aq", ...filters])).stdout);
         if (ids.length > 0) yield* dockerRun(["rm", "-f", ...ids]);
-        const volumes = splitLines(
-          (yield* dockerRun(["volume", "ls", "-q", "--filter", filter])).stdout,
-        );
+        const volumes = splitLines((yield* dockerRun(["volume", "ls", "-q", ...filters])).stdout);
         if (volumes.length > 0) yield* dockerRun(["volume", "rm", ...volumes]);
       });
 
@@ -309,10 +317,30 @@ export const DockerComposeLive = Layer.effect(
 
       prepareComposeFile: (recipe, ctx) =>
         Effect.gen(function* () {
+          const writeGeneratedDockerfile = () => {
+            if (recipe.odoo.build !== null) {
+              writeFileSync(
+                join(ctx.rootDir, GENERATED_DOCKERFILE_RELATIVE_PATH),
+                renderDockerfile(recipe.odoo.version, recipe.odoo.build),
+              );
+            }
+          };
           if (recipe.compose.file !== null) {
             const file = isAbsolute(recipe.compose.file)
               ? recipe.compose.file
               : resolve(ctx.rootDir, recipe.compose.file);
+            yield* Effect.try({
+              try: () => {
+                mkdirSync(join(ctx.rootDir, ".odoo-agentic-dev"), { recursive: true });
+                writeGeneratedDockerfile();
+              },
+              catch: (cause) =>
+                new ComposeCommandError({
+                  args: ["<prepare>"],
+                  exitCode: -1,
+                  stderrTail: String(cause),
+                }),
+            });
             return {
               projectName: ctx.composeProjectName,
               composeFile: file,
@@ -325,12 +353,7 @@ export const DockerComposeLive = Layer.effect(
             try: () => {
               mkdirSync(dirname(file), { recursive: true });
               writeFileSync(file, renderComposeYaml(buildComposeModel(recipe, ctx)));
-              if (recipe.odoo.build !== null) {
-                writeFileSync(
-                  join(ctx.rootDir, GENERATED_DOCKERFILE_RELATIVE_PATH),
-                  renderDockerfile(recipe.odoo.version, recipe.odoo.build),
-                );
-              }
+              writeGeneratedDockerfile();
             },
             catch: (cause) =>
               new ComposeCommandError({
@@ -359,11 +382,15 @@ export const DockerComposeLive = Layer.effect(
           .runInherited({ command: "docker", args: argv, cwd: ref.projectDir, env: ref.env })
           .pipe(
             Effect.mapError(toComposeError(argv)),
-            Effect.flatMap((code) =>
-              code === 0
+            Effect.flatMap((result) =>
+              result.exitCode === 0
                 ? Effect.void
                 : Effect.fail(
-                    new ComposeCommandError({ args: argv, exitCode: code, stderrTail: "" }),
+                    new ComposeCommandError({
+                      args: argv,
+                      exitCode: result.exitCode,
+                      stderrTail: result.outputTail,
+                    }),
                   ),
             ),
           );

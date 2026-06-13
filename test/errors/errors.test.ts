@@ -5,6 +5,7 @@ import {
   PortConflictError,
   SharedDatabaseProtectionError,
   StateError,
+  UsageError,
   isRuntimeError,
   renderError,
 } from "../../src/errors/errors.js";
@@ -32,6 +33,7 @@ describe("renderError", () => {
     expect(text).toContain("docker compose up");
     expect(text).toContain("/work");
     expect(text).toContain("17");
+    expect(text).toContain("output (tail)");
     expect(text).toContain("boom");
   });
 
@@ -39,6 +41,13 @@ describe("renderError", () => {
     const text = renderError(new ConfigValidationError({ issues: ["a bad", "b bad"] }));
     expect(text).toContain("a bad");
     expect(text).toContain("b bad");
+  });
+
+  it("renders command usage issues separately from config validation", () => {
+    const text = renderError(new UsageError({ issues: ["pass --detach with --json"] }));
+    expect(text).toContain("Invalid odoo-agentic-dev command usage");
+    expect(text).toContain("pass --detach with --json");
+    expect(text).toContain("fix the command flags or arguments");
   });
 
   it("renders state registry errors with the override env var as next action", () => {
@@ -69,6 +78,7 @@ describe("renderError", () => {
 
   it("isRuntimeError discriminates", () => {
     expect(isRuntimeError(new ConfigValidationError({ issues: [] }))).toBe(true);
+    expect(isRuntimeError(new UsageError({ issues: [] }))).toBe(true);
     expect(isRuntimeError(new StateError({ reason: "x" }))).toBe(true);
     expect(isRuntimeError(new PortConflictError({ port: 1, holder: null }))).toBe(true);
     expect(isRuntimeError(new Error("nope"))).toBe(false);

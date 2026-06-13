@@ -57,6 +57,90 @@ describe("OdooLifecycle.resetDatabase", () => {
     expect(indexOf("-i KL_setup")).toBeGreaterThan(indexOf("filestore"));
     expect(calls[indexOf("-i KL_setup")]).toContain("--without-demo=all");
   });
+
+  it("builds the odoo image before reset when requested", async () => {
+    const { ctx, recipe, recording, run } = makeEnv();
+    await run(
+      Effect.gen(function* () {
+        const lifecycle = yield* OdooLifecycle;
+        yield* lifecycle.resetDatabase(recipe, ctx, { build: true });
+      }),
+    );
+    const calls = joinedCalls(recording);
+    const indexOf = (needle: string) => calls.findIndex((c) => c.includes(needle));
+    expect(indexOf("build odoo")).toBeGreaterThanOrEqual(0);
+    expect(indexOf("up -d db")).toBeGreaterThan(indexOf("build odoo"));
+    expect(indexOf("-i KL_setup")).toBeGreaterThan(indexOf("build odoo"));
+  });
+
+  it("stops a running odoo service before database DDL and restarts it afterward", async () => {
+    const rootDir = mkdtempSync(join(tmpdir(), "oad-lc-running-"));
+    tmp.push(rootDir);
+    const recipe = makeRecipe({
+      project: { id: "kl", dbPrefix: "kl" },
+      odoo: { version: "18.0", addons: [{ host: "addons", container: "/mnt/c" }] },
+      database: { initialModules: ["KL_setup"], withoutDemo: "all" },
+    });
+    const ctx = makeCtx(recipe, "feature/z", rootDir);
+    const recording = makeRecordingRunner((spec) =>
+      spec.args[0] === "compose" &&
+      spec.args.includes("ps") &&
+      spec.args.includes("--status") &&
+      spec.args.includes("running")
+        ? { exitCode: 0, stdout: "odoo\n", stderr: "" }
+        : undefined,
+    );
+    const run = runWith(
+      Layer.provide(
+        OdooLifecycleLive,
+        Layer.merge(Layer.provide(DockerComposeLive, recording.layer), recording.layer),
+      ),
+    );
+    await run(
+      Effect.gen(function* () {
+        const lifecycle = yield* OdooLifecycle;
+        yield* lifecycle.resetDatabase(recipe, ctx, {});
+      }),
+    );
+    const calls = joinedCalls(recording);
+    const indexOf = (needle: string) => calls.findIndex((c) => c.includes(needle));
+    expect(indexOf("stop odoo")).toBeGreaterThan(indexOf("ps --status running --services odoo"));
+    expect(indexOf("DROP DATABASE")).toBeGreaterThan(indexOf("stop odoo"));
+    expect(calls.findLastIndex((c) => c.includes("up -d odoo"))).toBeGreaterThan(
+      indexOf("-i KL_setup"),
+    );
+  });
+});
+
+describe("OdooLifecycle.databaseExists", () => {
+  it("returns true only when pg_database reports the database", async () => {
+    const { ctx, recipe, run } = makeEnv();
+    const truthy = makeRecordingRunner((spec) =>
+      spec.args.includes("-tAc") ? { exitCode: 0, stdout: "1\n", stderr: "" } : undefined,
+    );
+    const layeredRun = runWith(
+      Layer.provide(
+        OdooLifecycleLive,
+        Layer.merge(Layer.provide(DockerComposeLive, truthy.layer), truthy.layer),
+      ),
+    );
+    await expect(
+      layeredRun(
+        Effect.gen(function* () {
+          const lifecycle = yield* OdooLifecycle;
+          return yield* lifecycle.databaseExists(recipe, ctx);
+        }),
+      ),
+    ).resolves.toBe(true);
+    await expect(
+      run(
+        Effect.gen(function* () {
+          const lifecycle = yield* OdooLifecycle;
+          return yield* lifecycle.databaseExists(recipe, ctx);
+        }),
+      ),
+    ).resolves.toBe(false);
+  });
 });
 
 describe("OdooLifecycle.runPostInitHooks", () => {
@@ -104,6 +188,20 @@ describe("OdooLifecycle.updateModules", () => {
     expect(indexOf("stop odoo")).toBeGreaterThanOrEqual(0);
     expect(indexOf("-u KL_base")).toBeGreaterThan(indexOf("stop odoo"));
     expect(indexOf("up -d odoo")).toBeGreaterThan(indexOf("-u KL_base"));
+  });
+
+  it("builds before module update when requested", async () => {
+    const { ctx, recipe, recording, run } = makeEnv();
+    await run(
+      Effect.gen(function* () {
+        const lifecycle = yield* OdooLifecycle;
+        yield* lifecycle.updateModules(recipe, ctx, ["KL_base"], { restart: true, build: true });
+      }),
+    );
+    const calls = joinedCalls(recording);
+    const indexOf = (needle: string) => calls.findIndex((c) => c.includes(needle));
+    expect(indexOf("build odoo")).toBeGreaterThanOrEqual(0);
+    expect(indexOf("-u KL_base")).toBeGreaterThan(indexOf("build odoo"));
   });
 
   it("skips the restart with restart=false", async () => {
@@ -187,5 +285,19 @@ describe("OdooLifecycle.runTests", () => {
     expect(result.exitCode).toBe(0);
     expect(result.stdoutTail).toBe("");
     expect(result.stderrTail).toBe("");
+  });
+
+  it("builds before running tests when requested", async () => {
+    const { ctx, recipe, recording, run } = makeEnv();
+    await run(
+      Effect.gen(function* () {
+        const lifecycle = yield* OdooLifecycle;
+        return yield* lifecycle.runTests(recipe, ctx, { tags: "payment", build: true });
+      }),
+    );
+    const calls = joinedCalls(recording);
+    const indexOf = (needle: string) => calls.findIndex((c) => c.includes(needle));
+    expect(indexOf("build odoo")).toBeGreaterThanOrEqual(0);
+    expect(indexOf("--test-tags payment")).toBeGreaterThan(indexOf("build odoo"));
   });
 });

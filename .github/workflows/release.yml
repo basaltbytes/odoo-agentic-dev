@@ -2,7 +2,8 @@ name: release
 # Publishes to npm via OIDC trusted publishing — no NPM_TOKEN secret anywhere.
 # npmjs.com must list this exact workflow (basaltbytes/odoo-agentic-dev,
 # release.yml) as the package's trusted publisher; the registry then accepts
-# the runner's OIDC identity and generates provenance attestations itself.
+# the runner's OIDC identity. Because this repository and package are public,
+# npm also generates provenance attestations for tag publishes.
 on:
   push:
     tags: ["v*"]
@@ -35,14 +36,10 @@ jobs:
             echo "::error::tag v$TAG does not match package.json version $PKG"
             exit 1
           fi
-      # prepublishOnly runs the full gate (lint, typecheck, build, test);
+      # prepublishOnly runs the full gate (lint, format:check, typecheck, build, test);
       # --no-git-checks because a tag checkout is a detached HEAD.
-      # NPM_CONFIG_PROVENANCE: provenance attestations live in a PUBLIC
-      # transparency log, so npm/pnpm only emit them for a public source repo.
-      # While this repo is private, pnpm logs "ERR_PNPM_PROVENANCE_INSUFFICIENT
-      # _INFORMATION ... determine visibility" and skips (a WARN, not a failure).
-      # The flag is left on so provenance turns on automatically if the repo is
-      # ever made public — no workflow change needed.
+      # NPM_CONFIG_PROVENANCE keeps provenance explicit for pnpm and matches
+      # package.json publishConfig.provenance.
       - run: pnpm publish --access public --no-git-checks
         env:
           NPM_CONFIG_PROVENANCE: "true"

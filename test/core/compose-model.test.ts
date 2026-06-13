@@ -57,6 +57,21 @@ describe("buildComposeModel", () => {
     expect((m.services["odoo"] as Record<string, unknown>)["image"]).toBe("odoo:18.0");
   });
 
+  it("uses imageName as the runtime image when no build or dockerfile is configured", () => {
+    const custom = makeRecipe({
+      project: { id: "x", dbPrefix: "x" },
+      odoo: {
+        version: "18.0",
+        imageName: "acme/odoo-dev:local",
+        addons: [{ host: "addons", container: "/mnt/c" }],
+      },
+    });
+    const m = buildComposeModel(custom, makeCtx(custom, "b"));
+    const odoo = m.services["odoo"] as Record<string, unknown>;
+    expect(odoo["image"]).toBe("acme/odoo-dev:local");
+    expect(odoo["build"]).toBeUndefined();
+  });
+
   it("serves exactly the derived database with addons path and dev mode", () => {
     const odoo = model.services["odoo"] as Record<string, any>;
     expect(odoo.command).toEqual([
@@ -110,6 +125,7 @@ describe("buildComposeModel", () => {
       "dev.basaltbytes.oad.database": ctx.databaseName,
       "dev.basaltbytes.oad.root-dir": "/work/kl",
       "dev.basaltbytes.oad.branch": "feature/x",
+      "dev.basaltbytes.oad.shared": "false",
     };
     expect((model.services["odoo"] as Record<string, unknown>)["labels"]).toEqual(expected);
     expect((model.services["db"] as Record<string, unknown>)["labels"]).toEqual(expected);

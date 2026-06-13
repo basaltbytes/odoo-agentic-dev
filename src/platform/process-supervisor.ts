@@ -41,11 +41,14 @@ export const ProcessSupervisorLive = Layer.effect(
                     prefix: `[${spec.name}] `,
                   })
                   .pipe(
-                    Effect.flatMap((code) =>
-                      code === 0
+                    Effect.flatMap((result) =>
+                      result.exitCode === 0
                         ? Effect.void
                         : Effect.fail(
-                            new CompanionProcessError({ name: spec.name, exitCode: code }),
+                            new CompanionProcessError({
+                              name: spec.name,
+                              exitCode: result.exitCode,
+                            }),
                           ),
                     ),
                   ),

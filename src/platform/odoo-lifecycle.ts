@@ -10,6 +10,7 @@ import {
   copyFilestoreArgs,
   createDatabaseSql,
   createFromTemplateSql,
+  databaseExistsArgs,
   dropDatabaseSql,
   expandHook,
   odooInitArgs,
@@ -27,12 +28,17 @@ import type { ComposeRef } from "./docker-compose.js";
 import { CommandRunner, runInheritedOrFail } from "./command-runner.js";
 
 export interface OdooLifecycleApi {
+  readonly databaseExists: (
+    recipe: OdooAgenticDevConfig,
+    ctx: WorktreeContext,
+  ) => Effect.Effect<boolean, RuntimeError>;
   readonly resetDatabase: (
     recipe: OdooAgenticDevConfig,
     ctx: WorktreeContext,
     options: {
       readonly modules?: ReadonlyArray<string> | undefined;
       readonly withoutDemo?: string | false | undefined;
+      readonly build?: boolean | undefined;
     },
   ) => Effect.Effect<void, RuntimeError>;
   readonly runPostInitHooks: (
@@ -43,7 +49,7 @@ export interface OdooLifecycleApi {
     recipe: OdooAgenticDevConfig,
     ctx: WorktreeContext,
     modules: ReadonlyArray<string>,
-    options: { readonly restart: boolean },
+    options: { readonly restart: boolean; readonly build?: boolean | undefined },
   ) => Effect.Effect<void, RuntimeError>;
   /**
    * Snapshot `<db>` into `<db>__tpl` (database + filestore). Docker-only:
@@ -57,6 +63,7 @@ export interface OdooLifecycleApi {
   readonly restoreFromTemplate: (
     recipe: OdooAgenticDevConfig,
     ctx: WorktreeContext,
+    options?: { readonly build?: boolean | undefined },
   ) => Effect.Effect<void, RuntimeError>;
   /** Runs the test suite; reporting the tails is the caller's concern. */
   readonly runTests: (
@@ -85,6 +92,42 @@ export const OdooLifecycleLive = Layer.effect(
         .stream(ref, ["up", "-d", recipe.odoo.databaseServiceName])
         .pipe(Effect.andThen(compose.waitForDb(ref, recipe.odoo.databaseServiceName)));
 
+    const buildOdooImage = (recipe: OdooAgenticDevConfig, ref: ComposeRef) =>
+      compose.stream(ref, ["build", recipe.odoo.serviceName]);
+
+    const maybeBuildOdooImage = (
+      recipe: OdooAgenticDevConfig,
+      ref: ComposeRef,
+      build: boolean | undefined,
+    ) => (build === true ? buildOdooImage(recipe, ref) : Effect.void);
+
+    const odooServiceRunning = (recipe: OdooAgenticDevConfig, ref: ComposeRef) =>
+      compose
+        .tryRun(ref, ["ps", "--status", "running", "--services", recipe.odoo.serviceName])
+        .pipe(
+          Effect.map(
+            (result) =>
+              result.exitCode === 0 &&
+              result.stdout
+                .split(/\r?\n/)
+                .map((line) => line.trim())
+                .includes(recipe.odoo.serviceName),
+          ),
+        );
+
+    const stopOdooForMutation = (recipe: OdooAgenticDevConfig, ref: ComposeRef) =>
+      Effect.gen(function* () {
+        const wasRunning = yield* odooServiceRunning(recipe, ref);
+        if (wasRunning) yield* compose.stream(ref, ["stop", recipe.odoo.serviceName]);
+        return wasRunning;
+      });
+
+    const restartOdooIfNeeded = (
+      recipe: OdooAgenticDevConfig,
+      ref: ComposeRef,
+      shouldRestart: boolean,
+    ) => (shouldRestart ? compose.stream(ref, ["up", "-d", recipe.odoo.serviceName]) : Effect.void);
+
     const runShellCode = (
       recipe: OdooAgenticDevConfig,
       ctx: WorktreeContext,
@@ -98,10 +141,23 @@ export const OdooLifecycleLive = Layer.effect(
       );
 
     return {
-      resetDatabase: (recipe, ctx, options) =>
+      databaseExists: (recipe, ctx) =>
         Effect.gen(function* () {
           const ref = yield* compose.prepareComposeFile(recipe, ctx);
           yield* ensureDbReady(recipe, ref);
+          const result = yield* compose.run(
+            ref,
+            databaseExistsArgs(recipe.odoo.databaseServiceName, ctx.databaseName),
+          );
+          return result.stdout.trim() === "1";
+        }),
+
+      resetDatabase: (recipe, ctx, options) =>
+        Effect.gen(function* () {
+          const ref = yield* compose.prepareComposeFile(recipe, ctx);
+          yield* maybeBuildOdooImage(recipe, ref, options.build);
+          yield* ensureDbReady(recipe, ref);
+          const restartOdoo = yield* stopOdooForMutation(recipe, ref);
           const db = recipe.odoo.databaseServiceName;
           yield* compose.run(ref, psqlArgs(db, terminateSessionsSql(ctx.databaseName)));
           yield* compose.run(ref, psqlArgs(db, dropDatabaseSql(ctx.databaseName)));
@@ -115,6 +171,7 @@ export const OdooLifecycleLive = Layer.effect(
             options.withoutDemo ?? recipe.database.withoutDemo,
           );
           yield* compose.stream(ref, initArgs).pipe(Effect.mapError(toOdooError));
+          yield* restartOdooIfNeeded(recipe, ref, restartOdoo);
         }),
 
       runPostInitHooks: (recipe, ctx) =>
@@ -159,6 +216,7 @@ export const OdooLifecycleLive = Layer.effect(
         Effect.gen(function* () {
           const ref = yield* compose.prepareComposeFile(recipe, ctx);
           yield* ensureDbReady(recipe, ref);
+          const restartOdoo = yield* stopOdooForMutation(recipe, ref);
           const db = recipe.odoo.databaseServiceName;
           const tpl = templateDbName(ctx.databaseName);
           yield* compose.run(ref, psqlArgs(db, terminateSessionsSql(ctx.databaseName)));
@@ -168,12 +226,15 @@ export const OdooLifecycleLive = Layer.effect(
             ref,
             copyFilestoreArgs(recipe.odoo.serviceName, ctx.databaseName, tpl),
           );
+          yield* restartOdooIfNeeded(recipe, ref, restartOdoo);
         }),
 
-      restoreFromTemplate: (recipe, ctx) =>
+      restoreFromTemplate: (recipe, ctx, options) =>
         Effect.gen(function* () {
           const ref = yield* compose.prepareComposeFile(recipe, ctx);
+          yield* maybeBuildOdooImage(recipe, ref, options?.build);
           yield* ensureDbReady(recipe, ref);
+          const restartOdoo = yield* stopOdooForMutation(recipe, ref);
           const db = recipe.odoo.databaseServiceName;
           const tpl = templateDbName(ctx.databaseName);
           yield* compose.run(ref, psqlArgs(db, terminateSessionsSql(ctx.databaseName)));
@@ -183,11 +244,13 @@ export const OdooLifecycleLive = Layer.effect(
             ref,
             copyFilestoreArgs(recipe.odoo.serviceName, tpl, ctx.databaseName),
           );
+          yield* restartOdooIfNeeded(recipe, ref, restartOdoo);
         }),
 
       updateModules: (recipe, ctx, modules, options) =>
         Effect.gen(function* () {
           const ref = yield* compose.prepareComposeFile(recipe, ctx);
+          yield* maybeBuildOdooImage(recipe, ref, options.build);
           yield* ensureDbReady(recipe, ref);
           yield* compose.stream(ref, ["stop", recipe.odoo.serviceName]);
           yield* compose
@@ -209,6 +272,7 @@ export const OdooLifecycleLive = Layer.effect(
       runTests: (recipe, ctx, options) =>
         Effect.gen(function* () {
           const ref = yield* compose.prepareComposeFile(recipe, ctx);
+          yield* maybeBuildOdooImage(recipe, ref, options.build);
           yield* ensureDbReady(recipe, ref);
           const result = yield* compose.tryRun(
             ref,

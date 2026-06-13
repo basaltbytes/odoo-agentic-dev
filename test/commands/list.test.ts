@@ -123,7 +123,7 @@ describe("collectListEntries", () => {
       labeledPs: [
         {
           Labels:
-            "com.docker.compose.project=kl_adopted,dev.basaltbytes.oad=1,dev.basaltbytes.oad.project-id=kl,dev.basaltbytes.oad.database=kl_adopted,dev.basaltbytes.oad.root-dir=/w/adopted,dev.basaltbytes.oad.branch=",
+            "com.docker.compose.project=kl_adopted,dev.basaltbytes.oad=1,dev.basaltbytes.oad.project-id=kl,dev.basaltbytes.oad.database=kl_adopted,dev.basaltbytes.oad.root-dir=/w/adopted,dev.basaltbytes.oad.branch=,dev.basaltbytes.oad.shared=false",
         },
         // incomplete labels: skipped rather than half-adopted
         { Labels: "com.docker.compose.project=kl_mystery,dev.basaltbytes.oad=1" },
@@ -143,6 +143,21 @@ describe("collectListEntries", () => {
       shared: false,
     });
     expect(store.rows.has("kl_mystery")).toBe(false);
+  });
+
+  it("adopts older labeled stacks without shared labels as protected by default", async () => {
+    const { run, store } = makeEnv({
+      rows: [],
+      composeLs: [{ Name: "kl_legacy", Status: "running(2)" }],
+      labeledPs: [
+        {
+          Labels:
+            "com.docker.compose.project=kl_legacy,dev.basaltbytes.oad=1,dev.basaltbytes.oad.project-id=kl,dev.basaltbytes.oad.database=kl_legacy,dev.basaltbytes.oad.root-dir=/w/legacy,dev.basaltbytes.oad.branch=feature/legacy",
+        },
+      ],
+    });
+    await run(collectListEntries("kl"));
+    expect(store.rows.get("kl_legacy")).toMatchObject({ shared: true });
   });
 
   it("filters by project id; undefined lists everything", async () => {

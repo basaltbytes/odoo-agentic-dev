@@ -1,7 +1,7 @@
 import { resolve } from "node:path";
 import { Console, Effect } from "effect";
 import { Command, Flag } from "effect/unstable/cli";
-import { ConfigValidationError } from "../errors/errors.js";
+import { UsageError } from "../errors/errors.js";
 import type { OdooAgenticDevConfig } from "../core/project-recipe.js";
 import type { WorktreeContext } from "../core/worktree-context.js";
 import { substituteEnvTokens } from "../core/worktree-context.js";
@@ -55,10 +55,10 @@ export const buildUpPlan = (
 export const guardUpJson = (flags: {
   readonly json: boolean;
   readonly detach: boolean;
-}): Effect.Effect<void, ConfigValidationError> =>
+}): Effect.Effect<void, UsageError> =>
   flags.json && !flags.detach
     ? Effect.fail(
-        new ConfigValidationError({
+        new UsageError({
           issues: [
             "up --json requires --detach (attached up streams forever and never emits a final JSON line)",
           ],

@@ -19,11 +19,16 @@ export type ExecResult = {
   readonly stderr: string;
 };
 
+export type InheritedResult = {
+  readonly exitCode: number;
+  readonly outputTail: string;
+};
+
 export interface CommandRunnerApi {
   /** Run to completion capturing output. Non-zero exits RESOLVE (callers decide). Spawn failures FAIL. */
   readonly run: (spec: ExecSpec) => Effect.Effect<ExecResult, CommandFailedError>;
-  /** Run streaming output lines to this process's stdout (with optional prefix). Resolves with exit code. */
-  readonly runInherited: (spec: ExecSpec) => Effect.Effect<number, CommandFailedError>;
+  /** Run streaming output lines to this process's stdout (with optional prefix), keeping a bounded tail. */
+  readonly runInherited: (spec: ExecSpec) => Effect.Effect<InheritedResult, CommandFailedError>;
   /** Full stdio inheritance (TTY passthrough) for interactive children. Resolves with exit code. */
   readonly runInteractive: (spec: ExecSpec) => Effect.Effect<number, CommandFailedError>;
 }
@@ -36,16 +41,16 @@ export const runInheritedOrFail = (
   spec: ExecSpec,
 ): Effect.Effect<void, CommandFailedError> =>
   runner.runInherited(spec).pipe(
-    Effect.flatMap((exitCode) =>
-      exitCode === 0
+    Effect.flatMap((result) =>
+      result.exitCode === 0
         ? Effect.void
         : Effect.fail(
             new CommandFailedError({
               command: spec.command,
               args: spec.args,
               cwd: spec.cwd,
-              exitCode,
-              stderrTail: "",
+              exitCode: result.exitCode,
+              stderrTail: result.outputTail,
             }),
           ),
     ),
@@ -100,11 +105,14 @@ export const CommandRunnerLive = Layer.effect(
         Effect.gen(function* () {
           const handle = yield* spawn(spec);
           const prefix = spec.prefix ?? "";
+          const lines: Array<string> = [];
           const echo = handle.all.pipe(
             Stream.decodeText(),
             Stream.splitLines,
             Stream.runForEach((line) =>
               Effect.sync(() => {
+                lines.push(line);
+                if (lines.length > 20) lines.shift();
                 process.stdout.write(`${prefix}${line}\n`);
               }),
             ),
@@ -112,7 +120,7 @@ export const CommandRunnerLive = Layer.effect(
           const [, exitCode] = yield* Effect.all([echo, handle.exitCode], {
             concurrency: "unbounded",
           });
-          return Number(exitCode);
+          return { exitCode: Number(exitCode), outputTail: lines.join("\n") };
         }),
       ).pipe(
         Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),

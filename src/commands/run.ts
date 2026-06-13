@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { Effect } from "effect";
 import { Argument, Command, Flag } from "effect/unstable/cli";
-import { ConfigLoadError, ConfigValidationError } from "../errors/errors.js";
+import { ConfigLoadError, UsageError } from "../errors/errors.js";
 import type { RuntimeError } from "../errors/errors.js";
 import { trailingOperands } from "./trailing-args.js";
 import type { OdooAgenticDevConfig } from "../core/project-recipe.js";
@@ -105,7 +105,7 @@ export const runCommand = Command.make(
       const argv = [...flags.argv, ...trailingOperands()];
       if (argv.length === 0) {
         return yield* Effect.fail(
-          new ConfigValidationError({
+          new UsageError({
             issues: ["run requires a command, e.g. `odoo-agentic-dev run -- pnpm test:e2e`"],
           }),
         );

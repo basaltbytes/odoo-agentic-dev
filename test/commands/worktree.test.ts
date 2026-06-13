@@ -178,6 +178,7 @@ const makeLifecycle = (calls: Array<string>) => {
       calls.push(name);
     });
   return Layer.succeed(OdooLifecycle, {
+    databaseExists: () => record("databaseExists").pipe(Effect.as(true)),
     resetDatabase: () => record("resetDatabase"),
     runPostInitHooks: () => record("runPostInitHooks"),
     updateModules: () => record("updateModules"),

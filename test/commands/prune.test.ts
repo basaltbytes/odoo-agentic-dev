@@ -61,7 +61,13 @@ const makeEnv = (options: {
   readonly gitLayer?: Layer.Layer<GitApi>;
 }) => {
   const projectOf = (args: ReadonlyArray<string>): string =>
-    String(args.at(-1)).split("=").at(-1) ?? "";
+    String(
+      args.find(
+        (arg) => typeof arg === "string" && arg.startsWith("label=com.docker.compose.project="),
+      ) ?? "",
+    )
+      .split("=")
+      .at(-1) ?? "";
   const recording = makeRecordingRunner((spec) => {
     if (spec.args[0] === "compose" && spec.args[1] === "ls") {
       return { exitCode: 0, stdout: JSON.stringify(options.composeLs ?? []), stderr: "" };
@@ -134,9 +140,24 @@ describe("runPrune", () => {
     expect(report.removed).toEqual([{ composeProject: "kl_gone", reason: "gone-branch" }]);
     expect(store.rows.has("kl_gone")).toBe(false);
     expect(recording.calls.map((c) => c.args).filter((args) => args[0] !== "compose")).toEqual([
-      ["ps", "-aq", "--filter", "label=com.docker.compose.project=kl_gone"],
+      [
+        "ps",
+        "-aq",
+        "--filter",
+        "label=com.docker.compose.project=kl_gone",
+        "--filter",
+        "label=dev.basaltbytes.oad=1",
+      ],
       ["rm", "-f", "c1", "c2"],
-      ["volume", "ls", "-q", "--filter", "label=com.docker.compose.project=kl_gone"],
+      [
+        "volume",
+        "ls",
+        "-q",
+        "--filter",
+        "label=com.docker.compose.project=kl_gone",
+        "--filter",
+        "label=dev.basaltbytes.oad=1",
+      ],
       ["volume", "rm", "v1"],
     ]);
   });
@@ -154,8 +175,23 @@ describe("runPrune", () => {
     // here, so nothing is rm'ed
     expect(recording.calls.map((c) => c.args)).toEqual([
       ["compose", "ls", "-a", "--format", "json"],
-      ["ps", "-aq", "--filter", "label=com.docker.compose.project=kl_vanished"],
-      ["volume", "ls", "-q", "--filter", "label=com.docker.compose.project=kl_vanished"],
+      [
+        "ps",
+        "-aq",
+        "--filter",
+        "label=com.docker.compose.project=kl_vanished",
+        "--filter",
+        "label=dev.basaltbytes.oad=1",
+      ],
+      [
+        "volume",
+        "ls",
+        "-q",
+        "--filter",
+        "label=com.docker.compose.project=kl_vanished",
+        "--filter",
+        "label=dev.basaltbytes.oad=1",
+      ],
     ]);
   });
 

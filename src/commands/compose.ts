@@ -2,7 +2,7 @@ import { Effect } from "effect";
 import { Argument, Command, Flag } from "effect/unstable/cli";
 import type { OdooAgenticDevConfig } from "../core/project-recipe.js";
 import type { WorktreeContext } from "../core/worktree-context.js";
-import { ConfigValidationError } from "../errors/errors.js";
+import { UsageError } from "../errors/errors.js";
 import type { RuntimeError } from "../errors/errors.js";
 import { trailingOperands } from "./trailing-args.js";
 import type { CommandRunnerApi } from "../platform/command-runner.js";
@@ -38,7 +38,7 @@ export const composeCommand = Command.make(
       const args = [...flags.args, ...trailingOperands()];
       if (args.length === 0) {
         return yield* Effect.fail(
-          new ConfigValidationError({
+          new UsageError({
             issues: [
               "compose requires docker compose arguments, e.g. `odoo-agentic-dev compose -- logs -f`",
             ],

@@ -8,6 +8,7 @@ import type {
   EnvironmentRow,
   PruneReason,
 } from "../core/environment.js";
+import { UsageError } from "../errors/errors.js";
 import type { ComposeCommandError, StateError } from "../errors/errors.js";
 import { DockerCompose } from "../platform/docker-compose.js";
 import type { DockerComposeApi } from "../platform/docker-compose.js";
@@ -176,9 +177,17 @@ export const pruneCommand = Command.make(
   },
   (flags) =>
     Effect.gen(function* () {
+      const olderThanDays = Option.getOrUndefined(flags.olderThan) ?? null;
+      if (olderThanDays !== null && olderThanDays < 1) {
+        return yield* Effect.fail(
+          new UsageError({
+            issues: [`--older-than must be an integer >= 1, got ${olderThanDays}`],
+          }),
+        );
+      }
       const projectId = yield* resolveProjectId(flags.config, flags.allProjects);
       const report = yield* runPrune({
-        olderThanDays: Option.getOrUndefined(flags.olderThan) ?? null,
+        olderThanDays,
         yes: flags.yes,
         allowShared: flags.allowShared,
         projectId,

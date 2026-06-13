@@ -1,6 +1,10 @@
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterAll } from "vitest";
 import { describe, expect, it, vi } from "vitest";
 import { Effect, Layer } from "effect";
-import { runResetFlow } from "../../src/commands/reset-db.js";
+import { computeTemplateKeyForContext, runResetFlow } from "../../src/commands/reset-db.js";
 import type { ResetFlowOptions } from "../../src/commands/reset-db.js";
 import { rowFromContext } from "../../src/commands/state-hooks.js";
 import { OdooLifecycle } from "../../src/platform/odoo-lifecycle.js";
@@ -10,6 +14,11 @@ import { makeFakeStateStore } from "../../src/testing/fake-adapters.js";
 import { makeCtx, makeRecipe, runWith } from "../helpers.js";
 
 vi.spyOn(console, "log").mockImplementation(() => {});
+
+const tmp: Array<string> = [];
+afterAll(() => {
+  for (const dir of tmp) rmSync(dir, { recursive: true, force: true });
+});
 
 const recipe = makeRecipe({
   project: { id: "kl", dbPrefix: "kl" },
@@ -32,6 +41,7 @@ const makeFakeLifecycle = (): {
   return {
     calls,
     layer: Layer.succeed(OdooLifecycle, {
+      databaseExists: () => record("databaseExists").pipe(Effect.as(true)),
       resetDatabase: () => record("resetDatabase"),
       runPostInitHooks: () => record("runPostInitHooks"),
       updateModules: () => record("updateModules"),
@@ -58,6 +68,7 @@ const seedRow = (template: { databaseName: string; key: string } | null) => {
 const baseOptions: ResetFlowOptions = {
   noTemplate: false,
   refreshTemplate: false,
+  build: false,
   modules: undefined,
   withoutDemo: undefined,
 };
@@ -127,5 +138,32 @@ describe("runResetFlow", () => {
       templateDb: tplName,
       templateKey: expectedKey,
     });
+  });
+});
+
+describe("computeTemplateKeyForContext", () => {
+  it("changes when declared image/config file contents change", async () => {
+    const rootDir = mkdtempSync(join(tmpdir(), "oad-template-key-"));
+    tmp.push(rootDir);
+    mkdirSync(join(rootDir, "config"), { recursive: true });
+    writeFileSync(join(rootDir, "requirements.txt"), "requests==1\n");
+    writeFileSync(join(rootDir, "config", "odoo.conf"), "workers = 0\n");
+    const recipe = makeRecipe({
+      project: { id: "kl", dbPrefix: "kl" },
+      odoo: {
+        version: "18.0",
+        build: { pipRequirements: ["requirements.txt"] },
+        configFile: "config/odoo.conf",
+        addons: [{ host: "addons", container: "/mnt/c" }],
+      },
+    });
+    const ctx = makeCtx(recipe, "feature/z", rootDir);
+    const first = await Effect.runPromise(computeTemplateKeyForContext(recipe, ctx));
+    writeFileSync(join(rootDir, "requirements.txt"), "requests==2\n");
+    const second = await Effect.runPromise(computeTemplateKeyForContext(recipe, ctx));
+    writeFileSync(join(rootDir, "config", "odoo.conf"), "workers = 2\n");
+    const third = await Effect.runPromise(computeTemplateKeyForContext(recipe, ctx));
+    expect(second).not.toBe(first);
+    expect(third).not.toBe(second);
   });
 });

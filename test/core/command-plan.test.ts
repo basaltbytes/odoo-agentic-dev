@@ -4,6 +4,7 @@ import {
   copyFilestoreArgs,
   createDatabaseSql,
   createFromTemplateSql,
+  databaseExistsArgs,
   dropDatabaseSql,
   expandHook,
   odooInitArgs,
@@ -34,6 +35,21 @@ describe("sql/argv builders", () => {
       "ON_ERROR_STOP=1",
       "-c",
       "SELECT 1",
+    ]);
+  });
+
+  it("databaseExistsArgs checks pg_database through the postgres database", () => {
+    expect(databaseExistsArgs("db", "kl_x")).toEqual([
+      "exec",
+      "-T",
+      "db",
+      "psql",
+      "-U",
+      "odoo",
+      "-d",
+      "postgres",
+      "-tAc",
+      "SELECT 1 FROM pg_database WHERE datname = 'kl_x'",
     ]);
   });
 

@@ -26,6 +26,19 @@ export const psqlArgs = (dbService: string, sql: string): Array<string> => [
   sql,
 ];
 
+export const databaseExistsArgs = (dbService: string, databaseName: string): Array<string> => [
+  "exec",
+  "-T",
+  dbService,
+  "psql",
+  "-U",
+  "odoo",
+  "-d",
+  "postgres",
+  "-tAc",
+  `SELECT 1 FROM pg_database WHERE datname = '${databaseName}'`,
+];
+
 export const terminateSessionsSql = (databaseName: string): string =>
   `SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '${databaseName}' AND pid <> pg_backend_pid()`;
 
@@ -122,6 +135,7 @@ export type OdooTestOptions = {
   readonly module?: string | undefined;
   readonly logLevel?: string | undefined;
   readonly extraArgs?: ReadonlyArray<string> | undefined;
+  readonly build?: boolean | undefined;
 };
 
 export const odooTestArgs = (

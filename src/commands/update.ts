@@ -1,6 +1,6 @@
 import { Effect } from "effect";
 import { Argument, Command, Flag } from "effect/unstable/cli";
-import { ConfigValidationError } from "../errors/errors.js";
+import { UsageError } from "../errors/errors.js";
 import { OdooLifecycle } from "../platform/odoo-lifecycle.js";
 import { resolveContext } from "./resolve-context.js";
 import { recordEnvironment } from "./state-hooks.js";
@@ -11,6 +11,9 @@ export const updateCommand = Command.make(
   {
     modules: Argument.string("modules"),
     noRestart: Flag.boolean("no-restart"),
+    build: Flag.boolean("build").pipe(
+      Flag.withDescription("rebuild the Odoo image before running the update container"),
+    ),
     json: Flag.boolean("json").pipe(
       Flag.withDescription("suppress decorative output; print one final JSON report line"),
     ),
@@ -25,7 +28,7 @@ export const updateCommand = Command.make(
           .filter((m) => m.length > 0);
         if (list.length === 0) {
           return yield* Effect.fail(
-            new ConfigValidationError({
+            new UsageError({
               issues: ["update requires a non-empty comma-separated module list"],
             }),
           );
@@ -35,7 +38,10 @@ export const updateCommand = Command.make(
         yield* recordEnvironment(recipe, ctx);
         const lifecycle = yield* OdooLifecycle;
         yield* report.say(`Updating modules [${list.join(", ")}] in ${ctx.databaseName}`);
-        yield* lifecycle.updateModules(recipe, ctx, list, { restart: !flags.noRestart });
+        yield* lifecycle.updateModules(recipe, ctx, list, {
+          restart: !flags.noRestart,
+          build: flags.build,
+        });
         yield* report.action("update-modules");
       }),
     ),

@@ -96,7 +96,8 @@ export default defineConfig({
     dockerfile: "Dockerfile.odoo",    // default: none — hand-written escape hatch, mutually
                                       //   exclusive with `build`; without either, the stock
                                       //   `odoo:<version>` image runs as-is
-    imageName: "acme-odoo:dev",       // default: none — tag for the built image
+    imageName: "acme-odoo:dev",       // default: none — tag for a built image, or a
+                                      //   prebuilt image to run when no build/dockerfile is set
     dev: "xml,reload",                // default — `--dev=` flags for the served Odoo; false disables
     baseAddonsPath:                   // default — in-image addons dir, prepended to every
       "/usr/lib/python3/dist-packages/odoo/addons", //   --addons-path the CLI passes
@@ -254,6 +255,7 @@ Delete and recreate the current worktree database and filestore, terminate activ
 | Flag | Meaning |
 | --- | --- |
 | `--allow-shared` | permit resetting the shared database |
+| `--build` | rebuild the Odoo image before running reset/restore containers |
 | `--modules <list>` | comma-separated module list (defaults to the recipe's `initialModules`) |
 | `--without-demo <mode>` | demo-data mode passed straight to Odoo's `--without-demo` |
 | `--no-template` | full init even when a template snapshot exists (template kept) |
@@ -267,10 +269,11 @@ Demo data is controlled at database initialization time, not per test run. The r
 
 The first successful full init (from `setup` or `reset-db`) is snapshotted — after the post-init hooks — as a PostgreSQL template database named `<database>__tpl` plus a filestore copy. Subsequent `reset-db` runs restore from that template in seconds instead of re-running module installation; post-init hooks are **not** re-run on restore because their effects are baked into the snapshot.
 
-Snapshots carry a key derived from `initialModules`, `withoutDemo`, `odoo.version`, and the `postInit` hooks. Changing any of these invalidates the template: the next `reset-db` automatically falls back to a full init and takes a fresh snapshot. One-off `--modules`/`--without-demo` overrides always force a full init without touching the stored template.
+Snapshots carry a key derived from the database-shaping recipe inputs: `initialModules`, `withoutDemo`, `odoo.version`, `postInit`, the Odoo addons path configuration, `odoo.configFile`, and the declared Odoo image inputs (`odoo.build`, `odoo.dockerfile`, `odoo.imageName`, plus the contents of declared requirements/copy/config files). Changing any of these invalidates the template: the next `reset-db` automatically falls back to a full init and takes a fresh snapshot. One-off `--modules`/`--without-demo` overrides always force a full init without touching the stored template.
 
 - `--no-template` forces a full init for one run, keeping the existing snapshot.
 - `--refresh-template` forces a full init and replaces the snapshot.
+- `--build` rebuilds the Odoo image before a reset or restore. Use it after editing `odoo.build`, a hand-written `odoo.dockerfile`, or files copied into the image.
 - PostgreSQL is per-stack, so templates only accelerate resets within the same worktree.
 - Database names are budgeted so `<database>__tpl` fits PostgreSQL's 63-char identifier limit (derived names are capped at 58 chars); an explicitly overridden name longer than 58 chars simply skips snapshotting.
 
@@ -286,12 +289,15 @@ oad update KL_base,KL_sale,KL_stock
 | Flag | Meaning |
 | --- | --- |
 | `--no-restart` | do not restart Odoo after the update |
+| `--build` | rebuild the Odoo image before running the update container |
 | `--json` | suppress decorative output; print one final JSON report line |
 | `--config <path>` | explicit config file path |
 
 ### `oad test`
 
 Run Odoo tests against the current worktree database. Options map to Odoo CLI flags, the exit code is non-zero on test failure, and recipes may define reusable test profiles (`test.profiles`) selected with `--profile`.
+
+Browser-based Odoo suites can be skipped by Odoo itself when the image is missing required Python/browser dependencies. `oad test` treats the known `websocket-client` skip as a failure and prints the fix: add `websocket-client` to `odoo.build.pipPackages`, rebuild with `oad test --build` or `oad setup`, and rerun.
 
 | Flag | Meaning |
 | --- | --- |
@@ -300,6 +306,7 @@ Run Odoo tests against the current worktree database. Options map to Odoo CLI fl
 | `--module <name>` | restrict tests to a module |
 | `--log-level <level>` | Odoo log level |
 | `--profile <name>` | recipe-defined test profile (extra Odoo args) |
+| `--build` | rebuild the Odoo image before running the test container |
 | `--include-demo` | accepted for compatibility; demo data is controlled at database init in v1 (see `reset-db`) |
 | `--json` | suppress decorative output; print one final JSON report line (includes `exitCode`) |
 | `--config <path>` | explicit config file path |
@@ -414,7 +421,7 @@ With `--hook-json` (the Claude Code WorktreeCreate hook contract) the `{worktree
 
 ### `oad worktree remove <path>`
 
-Tear down a worktree's environment. When the directory still has a discoverable config, its own context is resolved and the stack goes down with volumes (`down --volumes` semantics) before the registry row is removed; a shared database is never torn down without `--allow-shared` (logged and skipped instead). When the directory is already gone, the identity is rebuilt from the directory name against the current project root and the teardown is label-based — the same machinery `prune` uses, no compose file needed. The directory itself is not deleted (git owns that).
+Tear down a worktree's environment. When the directory still has a discoverable config, its own context is resolved and the stack goes down with volumes (`down --volumes` semantics) before the registry row is removed; a shared database is never torn down without `--allow-shared` (logged and skipped instead). When the directory is already gone, the registry is checked for a row whose `rootDir` matches the removed path and that recorded Compose project is torn down by label; only if no row exists does the command fall back to rebuilding identity from the directory name against the current project root. The directory itself is not deleted (git owns that).
 
 With `--hook-json` (the WorktreeRemove hook contract) the `{worktree_path}` payload is read from stdin and the command **always exits 0** — a removal hook cannot block — logging each step to `--log-file` (directory created) when given, stderr otherwise.
 
@@ -491,7 +498,7 @@ At the end of `up` and `setup`, the registry is checked for dead environments of
 
 The generated Compose file binds Odoo to the loopback interface only (`127.0.0.1:<port>:8069`): another machine on your LAN can never reach a dev Odoo by default. To expose a stack deliberately, supply your own compose file via the recipe's `compose.file` with the port mapping you want (for example `"0.0.0.0:8069:8069"`) — deliberate exposure is a project decision, not a CLI flag.
 
-Every compose subprocess runs with the full context env exported (the same variables `info --env` prints, merged over the parent environment), so a project-supplied compose file can interpolate `${ODOO_DATABASE:?}` or `${ODOO_HTTP_PORT:?}` directly.
+Every compose subprocess runs with the full context env exported (the same variables `info --env` prints, merged over the parent environment), so a project-supplied compose file can interpolate `${ODOO_DATABASE:?}` or `${ODOO_HTTP_PORT:?}` directly. When `compose.file` is set together with `odoo.build`, the CLI still writes `.odoo-agentic-dev/Dockerfile.generated`; your compose file can point a service build at that generated Dockerfile while owning the rest of the stack.
 
 ## Environment Variables
 
@@ -512,7 +519,7 @@ Companion apps contribute their own variables to the context env: `portEnv` rece
 
 ## Safety Rules
 
-- A shared database (the recipe's `project.sharedDatabase`, used by `project.sharedBranches`) is never deleted without `--allow-shared`.
+- An existing shared database (the recipe's `project.sharedDatabase`, used by `project.sharedBranches`) is never deleted without `--allow-shared`; first creation is allowed when the database is absent.
 - Database names outside the safe pattern `^[a-z][a-z0-9_]*$` (max 63 chars) are rejected.
 - Destructive actions never run with an empty Compose project name.
 - `link-source` never overwrites a non-symlink path.
@@ -556,9 +563,35 @@ oad eject --write-config   # also rewrite the config in place
 
 By default eject prints a ready-to-apply config patch and changes nothing else; pass a path to override the destination (`--dockerfile-out` / `--compose-out`), `--force` to overwrite an existing file, and `--json` for a machine-readable `{ ok, written, configPatch, configWritten }` object. `--write-config` rewrites the config in place and discards comments, so it refuses a commented file without `--force`. `eject dockerfile` refuses a stock-image config — there is nothing to eject; add an `odoo.build` block first, or eject only the compose file.
 
+## Troubleshooting
+
+### pnpm 11 blocks install on `msgpackr-extract`
+
+`@effect/platform-node` may pull `msgpackr-extract`, which has a native build script. pnpm 11 requires an explicit build-script decision in non-interactive installs. If a consumer repo fails install before `oad` can run, record the denial once:
+
+```bash
+pnpm approve-builds '!msgpackr-extract'
+```
+
+This writes the package-manager policy to the consumer repo so future installs do not hang or fail.
+
+### Odoo browser tests skipped
+
+If Odoo reports a browser or Hoot suite as skipped because `websocket-client` is missing, add it to the image:
+
+```ts
+odoo: {
+  build: {
+    pipPackages: ["websocket-client"],
+  },
+}
+```
+
+Then rebuild and rerun with `oad test --build ...` or run `oad setup`. `oad test` fails this known skip pattern instead of reporting a misleading green exit.
+
 ## Releasing
 
-Releases are published by CI via [npm trusted publishing](https://docs.npmjs.com/trusted-publishers) (OIDC) — no npm token exists anywhere. Bump the version in `package.json`, commit, tag `v<version>`, and push the tag; `.github/workflows/release.yml` runs the full gate (`prepublishOnly`), publishes with registry-generated provenance, and creates a GitHub Release with generated notes. The tag must match `package.json` or the workflow refuses.
+Releases are published by CI via [npm trusted publishing](https://docs.npmjs.com/trusted-publishers) (OIDC) — no npm token exists anywhere. The repository and package are public, so npm generates provenance attestations for trusted-publishing releases. Bump the version in `package.json`, commit, tag `v<version>`, and push the tag; `.github/workflows/release.yml` runs the full gate (`prepublishOnly`), publishes with provenance, and creates a GitHub Release with generated notes. The tag must match `package.json` or the workflow refuses.
 
 ## Development
 

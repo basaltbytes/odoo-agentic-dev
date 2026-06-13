@@ -188,6 +188,14 @@ export const normalizeConfig = (
     companionNames.add(app.name);
   }
 
+  const cleanupMaxAgeDays = input.cleanup?.maxAgeDays;
+  if (
+    cleanupMaxAgeDays !== undefined &&
+    (!Number.isInteger(cleanupMaxAgeDays) || cleanupMaxAgeDays < 1)
+  ) {
+    issues.push(`cleanup.maxAgeDays must be an integer >= 1, got ${cleanupMaxAgeDays}`);
+  }
+
   if (
     (input.project.sharedBranches?.length ?? 0) > 0 &&
     input.project.sharedDatabase === undefined

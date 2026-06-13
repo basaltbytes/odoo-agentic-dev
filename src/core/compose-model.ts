@@ -39,6 +39,10 @@ export const buildOadLabels = (
         "dev.basaltbytes.oad.database": ctx.databaseName,
         "dev.basaltbytes.oad.root-dir": ctx.rootDir,
         "dev.basaltbytes.oad.branch": ctx.branch ?? "",
+        "dev.basaltbytes.oad.shared": String(
+          recipe.project.sharedDatabase !== null &&
+            ctx.databaseName === recipe.project.sharedDatabase,
+        ),
       };
 
 /**
@@ -80,7 +84,7 @@ export const buildComposeModel = (
           build: { context: ".", dockerfile },
           ...(recipe.odoo.imageName !== null ? { image: recipe.odoo.imageName } : {}),
         }
-      : { image: `odoo:${recipe.odoo.version}` };
+      : { image: recipe.odoo.imageName ?? `odoo:${recipe.odoo.version}` };
 
   return {
     services: {

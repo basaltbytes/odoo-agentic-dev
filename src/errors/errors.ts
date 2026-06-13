@@ -19,6 +19,14 @@ export class ConfigValidationError extends Data.TaggedError("ConfigValidationErr
   }
 }
 
+export class UsageError extends Data.TaggedError("UsageError")<{
+  readonly issues: ReadonlyArray<string>;
+}> {
+  override get message(): string {
+    return this.issues.join("; ");
+  }
+}
+
 export class GitError extends Data.TaggedError("GitError")<{
   readonly reason: string;
 }> {
@@ -143,6 +151,7 @@ export class InitError extends Data.TaggedError("InitError")<{
 export type RuntimeError =
   | ConfigLoadError
   | ConfigValidationError
+  | UsageError
   | GitError
   | UnsafeDatabaseNameError
   | SharedDatabaseProtectionError
@@ -160,6 +169,7 @@ export type RuntimeError =
 const RUNTIME_ERROR_TAGS: ReadonlySet<string> = new Set([
   "ConfigLoadError",
   "ConfigValidationError",
+  "UsageError",
   "GitError",
   "UnsafeDatabaseNameError",
   "SharedDatabaseProtectionError",
@@ -197,6 +207,12 @@ export const renderError = (error: RuntimeError): string => {
         ...error.issues.map((issue) => `  - ${issue}`),
         "Next: fix the config file and re-run.",
       );
+    case "UsageError":
+      return lines(
+        "Invalid odoo-agentic-dev command usage:",
+        ...error.issues.map((issue) => `  - ${issue}`),
+        "Next: fix the command flags or arguments and re-run.",
+      );
     case "GitError":
       return lines(
         `Git inspection failed: ${error.reason}`,
@@ -222,7 +238,7 @@ export const renderError = (error: RuntimeError): string => {
       return lines(
         `Command failed (exit ${error.exitCode}): ${[error.command, ...error.args].join(" ")}`,
         `Working directory: ${error.cwd ?? process.cwd()}`,
-        error.stderrTail.length > 0 ? `stderr (tail):\n${error.stderrTail}` : "stderr: (empty)",
+        error.stderrTail.length > 0 ? `output (tail):\n${error.stderrTail}` : "output: (empty)",
         "Next: re-run the command above manually to investigate.",
       );
     case "ComposeCommandError":

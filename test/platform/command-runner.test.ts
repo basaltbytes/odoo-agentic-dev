@@ -66,6 +66,21 @@ describe("CommandRunnerLive", () => {
     expect(exitCode).toBe(7);
   });
 
+  it("runInherited streams output and returns a bounded output tail with the exit code", async () => {
+    const result = await runLive(
+      Effect.gen(function* () {
+        const runner = yield* CommandRunner;
+        return yield* runner.runInherited({
+          command: "node",
+          args: ["-e", "console.log('visible out'); console.error('visible err'); process.exit(5)"],
+        });
+      }),
+    );
+    expect(result.exitCode).toBe(5);
+    expect(result.outputTail).toContain("visible out");
+    expect(result.outputTail).toContain("visible err");
+  });
+
   it("runInteractive fails typed when the binary cannot be spawned", async () => {
     await expect(
       runLive(
@@ -98,5 +113,20 @@ describe("makeRecordingRunner", () => {
       "docker compose up",
       "docker version",
     ]);
+  });
+
+  it("returns a tail from scripted inherited runs", async () => {
+    const recording = makeRecordingRunner(() => ({
+      exitCode: 9,
+      stdout: "",
+      stderr: "important failure",
+    }));
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const runner = yield* CommandRunner;
+        return yield* runner.runInherited({ command: "docker", args: ["compose", "up"] });
+      }).pipe(Effect.provide(recording.layer)),
+    );
+    expect(result).toEqual({ exitCode: 9, outputTail: "important failure" });
   });
 });

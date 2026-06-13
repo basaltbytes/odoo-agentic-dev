@@ -5,6 +5,7 @@ import { Argument, Command, Flag } from "effect/unstable/cli";
 import {
   ConfigValidationError,
   GitError,
+  UsageError,
   isRuntimeError,
   renderError,
   tail,
@@ -334,6 +335,25 @@ export const runWorktreeRemove = (
     const guardShared = (databaseName: string, sharedDatabase: string | null) =>
       isSharedDatabase(databaseName, sharedDatabase) && !allowShared;
 
+    const removeRecordedRow = (reason: string) =>
+      Effect.gen(function* () {
+        const rows = yield* store.list({});
+        const row = rows.find((candidate) => resolve(candidate.rootDir) === resolve(path));
+        if (row === undefined) return false;
+        if (row.shared && !allowShared) {
+          yield* log(
+            `skip: ${row.databaseName} is the shared database (pass --allow-shared to tear it down)`,
+          );
+          return true;
+        }
+        yield* log(`${reason}; tearing down ${row.composeProject} by container label`);
+        yield* compose.ensureAvailable();
+        yield* compose.removeByLabel(row.composeProject);
+        yield* store.remove(row.composeProject);
+        yield* log(`removed ${row.composeProject} from the registry`);
+        return true;
+      });
+
     if (existsSync(path)) {
       // a worktree dir without a discoverable config falls through to the
       // label-based path — same as a vanished dir, we only have the name
@@ -372,6 +392,8 @@ export const runWorktreeRemove = (
         return;
       }
     }
+
+    if (yield* removeRecordedRow("worktree identity found in the registry")) return;
 
     const current = yield* loadRecipe({ cwd, explicitPath: configFlag, env });
     const ctx = yield* buildWorktreeContext({
@@ -484,7 +506,7 @@ const createCommand = Command.make(
       const name = Option.getOrUndefined(flags.name);
       if (name === undefined) {
         return yield* Effect.fail(
-          new ConfigValidationError({
+          new UsageError({
             issues: ["worktree create requires a <name> argument (or --hook-json)"],
           }),
         );
@@ -552,7 +574,7 @@ const removeCommand = Command.make(
       const path = Option.getOrUndefined(flags.path);
       if (path === undefined) {
         return yield* Effect.fail(
-          new ConfigValidationError({
+          new UsageError({
             issues: ["worktree remove requires a <path> argument (or --hook-json)"],
           }),
         );

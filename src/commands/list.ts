@@ -73,7 +73,10 @@ const adoptionUpsert = (stack: LabeledContainer) =>
           stack.branch !== null && stack.branch !== "" ? stack.branch : basename(stack.rootDir),
         branch: stack.branch === "" ? null : stack.branch,
         odooHttpPort: 0,
-        shared: false,
+        // Older generated stacks did not carry the shared label. When unknown,
+        // preserve safety by adopting as shared so prune will skip it unless the
+        // user explicitly passes --allow-shared.
+        shared: stack.shared ?? true,
       };
 
 /**
