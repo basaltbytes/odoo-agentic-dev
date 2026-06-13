@@ -37,9 +37,12 @@ jobs:
           fi
       # prepublishOnly runs the full gate (lint, typecheck, build, test);
       # --no-git-checks because a tag checkout is a detached HEAD.
-      # NPM_CONFIG_PROVENANCE: pnpm reads neither publishConfig.provenance
-      # nor implies provenance under OIDC (verified beta.4/beta.5 shipped
-      # without attestations) — the env var is the reliable switch.
+      # NPM_CONFIG_PROVENANCE: provenance attestations live in a PUBLIC
+      # transparency log, so npm/pnpm only emit them for a public source repo.
+      # While this repo is private, pnpm logs "ERR_PNPM_PROVENANCE_INSUFFICIENT
+      # _INFORMATION ... determine visibility" and skips (a WARN, not a failure).
+      # The flag is left on so provenance turns on automatically if the repo is
+      # ever made public — no workflow change needed.
       - run: pnpm publish --access public --no-git-checks
         env:
           NPM_CONFIG_PROVENANCE: "true"
