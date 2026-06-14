@@ -382,7 +382,7 @@ describe("DockerComposeLive", () => {
         yield* dc.run(ref, ["up", "-d", "odoo"]);
         yield* dc.tryRun(ref, ["ps"]);
         yield* dc.stream(ref, ["stop", "odoo"]);
-        yield* dc.waitForDb(ref, "db", { intervalMillis: 1, maxAttempts: 1 });
+        yield* dc.waitForDb(ref, "db", { intervalMillis: 1, maxAttempts: 2 });
       }),
     );
     const composeCalls = recording.calls.filter((call) => call.args[0] === "compose");
@@ -393,10 +393,10 @@ describe("DockerComposeLive", () => {
     }
   });
 
-  it("waitForDb polls pg_isready until success", async () => {
+  it("waitForDb polls until SQL readiness is stable", async () => {
     let attempts = 0;
     const { ctx, recipe, run } = makeEnv((spec) => {
-      if (spec.args.includes("pg_isready")) {
+      if (spec.args.some((arg) => arg.includes("pg_isready"))) {
         attempts += 1;
         return { exitCode: attempts < 3 ? 1 : 0, stdout: "", stderr: "" };
       }
@@ -409,6 +409,31 @@ describe("DockerComposeLive", () => {
         yield* dc.waitForDb(ref, "db", { intervalMillis: 1, maxAttempts: 10 });
       }),
     );
-    expect(attempts).toBe(3);
+    expect(attempts).toBe(4);
+  });
+
+  it("waitForDb does not pass on the transient Postgres bootstrap server", async () => {
+    const outcomes = [0, 1, 0, 0];
+    let attempts = 0;
+    const { ctx, recipe, run } = makeEnv((spec) => {
+      if (spec.args.some((arg) => arg.includes("pg_isready"))) {
+        const exitCode = outcomes[attempts] ?? 0;
+        attempts += 1;
+        return {
+          exitCode,
+          stdout: exitCode === 0 ? "1\n" : "",
+          stderr: exitCode === 0 ? "" : "FATAL: the database system is shutting down",
+        };
+      }
+      return undefined;
+    });
+    await run(
+      Effect.gen(function* () {
+        const dc = yield* DockerCompose;
+        const ref = yield* dc.prepareComposeFile(recipe, ctx);
+        yield* dc.waitForDb(ref, "db", { intervalMillis: 1, maxAttempts: 10 });
+      }),
+    );
+    expect(attempts).toBe(4);
   });
 });

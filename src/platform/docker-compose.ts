@@ -90,7 +90,11 @@ export interface DockerComposeApi {
   readonly waitForDb: (
     ref: ComposeRef,
     dbService: string,
-    options?: { readonly intervalMillis?: number; readonly maxAttempts?: number },
+    options?: {
+      readonly intervalMillis?: number;
+      readonly maxAttempts?: number;
+      readonly stableAttempts?: number;
+    },
   ) => Effect.Effect<void, ComposeCommandError>;
 }
 
@@ -398,28 +402,36 @@ export const DockerComposeLive = Layer.effect(
 
       waitForDb: (ref, dbService, options) => {
         const interval = options?.intervalMillis ?? 1000;
-        const maxAttempts = options?.maxAttempts ?? 60;
-        const args = ["exec", "-T", dbService, "pg_isready", "-U", "odoo", "-d", "postgres"];
+        const stableAttempts = Math.max(1, options?.stableAttempts ?? 2);
+        const maxAttempts = Math.max(stableAttempts, options?.maxAttempts ?? 60);
+        const probe =
+          "pg_isready -U odoo -d postgres >/dev/null && psql -U odoo -d postgres -tAc 'SELECT 1' >/dev/null";
+        const args = ["exec", "-T", dbService, "sh", "-c", probe];
         const argv = composeArgs(ref, args);
-        const attempt = (n: number): Effect.Effect<void, ComposeCommandError> =>
+        const attempt = (n: number, stable: number): Effect.Effect<void, ComposeCommandError> =>
           exec(ref, argv).pipe(
-            Effect.flatMap((result) =>
-              result.exitCode === 0
-                ? Effect.void
-                : n >= maxAttempts
-                  ? Effect.fail(
-                      new ComposeCommandError({
-                        args: argv,
-                        exitCode: result.exitCode,
-                        stderrTail: `database not ready after ${maxAttempts} attempts`,
-                      }),
-                    )
-                  : Effect.sleep(Duration.millis(interval)).pipe(
-                      Effect.flatMap(() => attempt(n + 1)),
-                    ),
-            ),
+            Effect.flatMap((result) => {
+              const nextStable = result.exitCode === 0 ? stable + 1 : 0;
+              if (nextStable >= stableAttempts) return Effect.void;
+              if (n >= maxAttempts) {
+                const lastOutput = tail(result.stderr || result.stdout);
+                return Effect.fail(
+                  new ComposeCommandError({
+                    args: argv,
+                    exitCode: result.exitCode === 0 ? -1 : result.exitCode,
+                    stderrTail:
+                      lastOutput.length > 0
+                        ? `database not ready after ${maxAttempts} attempts; last probe: ${lastOutput}`
+                        : `database not ready after ${maxAttempts} attempts`,
+                  }),
+                );
+              }
+              return Effect.sleep(Duration.millis(interval)).pipe(
+                Effect.flatMap(() => attempt(n + 1, nextStable)),
+              );
+            }),
           );
-        return attempt(1);
+        return attempt(1, 0);
       },
     };
   }),

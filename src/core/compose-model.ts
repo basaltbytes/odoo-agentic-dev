@@ -9,6 +9,8 @@ export type ComposeModel = {
 };
 
 export const GENERATED_COMPOSE_RELATIVE_PATH = ".odoo-agentic-dev/compose.generated.yml";
+export const POSTGRES_HEALTHCHECK_COMMAND =
+  'test "$(cat /proc/1/comm)" = postgres && pg_isready -U odoo -d postgres';
 
 const hostPath = (host: string): string =>
   host.startsWith("/") || host.startsWith("./") || host.startsWith("../") ? host : `./${host}`;
@@ -93,7 +95,7 @@ export const buildComposeModel = (
         restart: "unless-stopped",
         environment: { POSTGRES_USER: "odoo", POSTGRES_PASSWORD: "odoo", POSTGRES_DB: "postgres" },
         healthcheck: {
-          test: ["CMD-SHELL", "pg_isready -U odoo -d postgres"],
+          test: ["CMD-SHELL", POSTGRES_HEALTHCHECK_COMMAND],
           interval: "2s",
           timeout: "5s",
           retries: 30,

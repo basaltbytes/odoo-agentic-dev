@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
-import { buildComposeModel, renderComposeYaml } from "../../src/core/compose-model.js";
+import {
+  buildComposeModel,
+  POSTGRES_HEALTHCHECK_COMMAND,
+  renderComposeYaml,
+} from "../../src/core/compose-model.js";
 import { GENERATED_DOCKERFILE_RELATIVE_PATH } from "../../src/core/dockerfile-model.js";
 import { makeCtx, makeRecipe } from "../helpers.js";
 
@@ -115,7 +119,7 @@ describe("buildComposeModel", () => {
     expect(odoo.depends_on).toEqual({ db: { condition: "service_healthy" } });
     const db = model.services["db"] as Record<string, any>;
     expect(db.image).toBe("postgres:16");
-    expect(db.healthcheck.test).toEqual(["CMD-SHELL", "pg_isready -U odoo -d postgres"]);
+    expect(db.healthcheck.test).toEqual(["CMD-SHELL", POSTGRES_HEALTHCHECK_COMMAND]);
   });
 
   it("stamps oad labels on both services and both volumes", () => {
