@@ -120,7 +120,7 @@ export default defineConfig({
     baseAddonsPath:                   // default — in-image addons dir, prepended to every
       "/usr/lib/python3/dist-packages/odoo/addons", //   --addons-path the CLI passes
     configFile: "config/odoo.conf",   // default: none — mounted read-only at /etc/odoo/odoo.conf
-                                      //   (rarely needed: db connection, --database, --addons-path,
+                                      //   (rarely needed: db connection, db_name/--database, --addons-path,
                                       //   and --no-database-list are all handled by the CLI)
     source: "../odoo",                // default: none — local Odoo checkout for `link-source`
     addons: [                         // required, at least one mount (host path relative to repo root)
@@ -520,7 +520,8 @@ Every report shares this core:
 ```
 
 - `ok` — `true` on success; `false` on failure or (for `test`) a non-zero child exit.
-- `composeProject` and `odooUrl` are kept as back-compat aliases of `composeProjectName` / the derived web URL.
+- `composeProject` is kept as a back-compat alias of `composeProjectName`.
+- `odooUrl` is the derived `/web` URL to open in a browser; `odooExplicitDbUrl` keeps the older `?db=` selector form available for tooling that wants it.
 - `actions` records what the command did, so tooling can tell which path ran.
 
 Per-command extras merged into the core:

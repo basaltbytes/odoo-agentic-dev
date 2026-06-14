@@ -553,7 +553,7 @@ Required output:
 Worktree: feature/KL-123-payment-flow
 Database: kl_123_payment_flow
 Compose project: kriss_laure_kl_123_payment_flow
-Odoo URL: http://127.0.0.1:18442/web?db=kl_123_payment_flow
+Odoo URL: http://127.0.0.1:18442/web
 PWA URL: http://localhost:28401
 ```
 

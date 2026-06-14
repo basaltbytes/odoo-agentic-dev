@@ -37,6 +37,7 @@ describe("buildWorktreeContext", () => {
     expect(ctx.composeProjectName).toBe("kriss_laure_kl_123_payment_flow");
     expect(ctx.odooHttpPort).toBe(18069 + offset);
     expect(ctx.odooBaseUrl).toBe(`http://127.0.0.1:${18069 + offset}`);
+    expect(ctx.odooWebUrl).toBe(`${ctx.odooBaseUrl}/web`);
     expect(ctx.companionPorts.get("pwa")).toBe(28028 + offset);
   });
 

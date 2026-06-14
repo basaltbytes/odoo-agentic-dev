@@ -13,8 +13,8 @@ Local Odoo environments are managed by `@basaltbytes/odoo-agentic-dev`
 derived deterministically from the current git worktree/branch — same branch,
 same database, same ports, on every machine.
 
-- `oad info --json` — the resolved context: database, ports, URLs, and every
-  env var the tooling derives.
+- `oad info --json` — the resolved context: database, ports, `odooUrl`
+  (browser URL), and every env var the tooling derives.
 - `oad setup` — prepare a fresh worktree end to end (deps, Docker image,
   database init, template snapshot).
 - `oad up --detach` / `down` — start/stop the stack (`up` rebuilds by

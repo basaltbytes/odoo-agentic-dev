@@ -8,7 +8,7 @@ export const buildInfoText = (ctx: WorktreeContext): string => {
     `Worktree: ${ctx.worktreeName}`,
     `Database: ${ctx.databaseName}`,
     `Compose project: ${ctx.composeProjectName}`,
-    `Odoo URL: ${ctx.odooBaseUrl}/web?db=${ctx.databaseName}`,
+    `Odoo URL: ${ctx.odooWebUrl}`,
   ];
   for (const [name, port] of ctx.companionPorts) out.push(`${name} URL: http://localhost:${port}`);
   return out.join("\n");
@@ -23,7 +23,8 @@ export const buildInfoJson = (ctx: WorktreeContext): string =>
       composeProjectName: ctx.composeProjectName,
       odooHttpPort: ctx.odooHttpPort,
       odooBaseUrl: ctx.odooBaseUrl,
-      odooUrl: `${ctx.odooBaseUrl}/web?db=${ctx.databaseName}`,
+      odooUrl: ctx.odooWebUrl,
+      odooExplicitDbUrl: `${ctx.odooWebUrl}?db=${ctx.databaseName}`,
       companions: Object.fromEntries(ctx.companionPorts),
       env: ctx.env,
     },

@@ -163,7 +163,7 @@ export const resetDbCommand = Command.make(
         yield* Effect.forEach(resetPathActions(path), report.action);
         yield* report.setExtra("mode", resetPathMode(path));
         yield* report.setExtra("templateKey", yield* computeTemplateKeyForContext(recipe, ctx));
-        yield* report.say(`Done. Odoo URL: ${ctx.odooBaseUrl}/web?db=${ctx.databaseName}`);
+        yield* report.say(`Done. Odoo URL: ${ctx.odooWebUrl}`);
       }),
     ),
 ).pipe(Command.withDescription("drop and re-initialize this worktree's database"));

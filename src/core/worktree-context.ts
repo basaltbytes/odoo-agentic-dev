@@ -22,6 +22,7 @@ export type WorktreeContext = {
   readonly composeProjectName: string;
   readonly odooHttpPort: number;
   readonly odooBaseUrl: string;
+  readonly odooWebUrl: string;
   readonly companionPorts: ReadonlyMap<string, number>;
   readonly env: Record<string, string>;
 };
@@ -87,6 +88,7 @@ export const buildWorktreeContext = (options: {
 
     const composeProjectName = yield* deriveComposeProjectName(recipe.project.id, databaseName);
     const odooBaseUrl = `http://127.0.0.1:${odooHttpPort}`;
+    const odooWebUrl = `${odooBaseUrl}/web`;
 
     // env assembly order: canonical → companion vars → aliases
     const assembled: Record<string, string> = {
@@ -125,6 +127,7 @@ export const buildWorktreeContext = (options: {
       composeProjectName,
       odooHttpPort,
       odooBaseUrl,
+      odooWebUrl,
       companionPorts,
       env: { ...assembled, ...aliased },
     };
