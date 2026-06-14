@@ -113,11 +113,14 @@ const fixturePort = (): number =>
   ).odooHttpPort;
 
 describe("pure helpers", () => {
-  it("nodeVersionOk enforces the >=22.15 floor", () => {
-    expect(nodeVersionOk("22.15.0")).toBe(true);
-    expect(nodeVersionOk("22.14.3")).toBe(false);
-    expect(nodeVersionOk("23.0.0")).toBe(true);
-    expect(nodeVersionOk("24.1.0")).toBe(true);
+  it("nodeVersionOk mirrors the npm engine floor", () => {
+    expect(nodeVersionOk("22.22.2")).toBe(true);
+    expect(nodeVersionOk("22.22.1")).toBe(false);
+    expect(nodeVersionOk("22.15.0")).toBe(false);
+    expect(nodeVersionOk("23.0.0")).toBe(false);
+    expect(nodeVersionOk("24.15.0")).toBe(true);
+    expect(nodeVersionOk("24.14.9")).toBe(false);
+    expect(nodeVersionOk("25.0.0")).toBe(true);
     expect(nodeVersionOk("21.9.0")).toBe(false);
   });
 
@@ -156,12 +159,16 @@ describe("pure helpers", () => {
 });
 
 describe("collectDoctorChecks", () => {
-  it("reports green across the board on a healthy host with a valid config", async () => {
+  it("reports host checks on a healthy Docker/Git host with a valid config", async () => {
     const { run } = makeEnv({});
     const checks = await run(collectDoctorChecks(writeConfig()));
-    for (const name of ["docker-daemon", "compose-v2", "node-version", "git", "state-db"]) {
+    for (const name of ["docker-daemon", "compose-v2", "git", "state-db"]) {
       expect(byName(checks, name)).toMatchObject({ ok: true, hard: true });
     }
+    expect(byName(checks, "node-version")).toMatchObject({
+      ok: nodeVersionOk(process.versions.node),
+      hard: true,
+    });
     expect(byName(checks, "config").ok).toBe(true);
     expect(byName(checks, "context")).toMatchObject({ ok: true, hard: false });
     expect(byName(checks, "context").detail).toContain("database fx_main");
@@ -172,7 +179,7 @@ describe("collectDoctorChecks", () => {
     expect(byName(checks, "image-fresh")).toMatchObject({ ok: true, hard: false });
     expect(byName(checks, "wsl")).toMatchObject({ ok: true, hard: false });
     expect(byName(checks, "prune-candidates")).toMatchObject({ ok: true, hard: false });
-    expect(hasHardFailure(checks)).toBe(false);
+    expect(hasHardFailure(checks)).toBe(!nodeVersionOk(process.versions.node));
   });
 
   it("docker daemon down is a hard failure but the report still completes", async () => {
@@ -206,7 +213,7 @@ describe("collectDoctorChecks", () => {
     expect(byName(checks, "config")).toMatchObject({ ok: false, hard: false });
     expect(checks.find((c) => c.name === "context")).toBeUndefined();
     expect(checks.find((c) => c.name === "port")).toBeUndefined();
-    expect(hasHardFailure(checks)).toBe(false);
+    expect(hasHardFailure(checks)).toBe(!nodeVersionOk(process.versions.node));
   });
 
   it("a busy port held by a known stack stays ok; an unknown holder fails", async () => {
@@ -279,7 +286,7 @@ describe("collectDoctorChecks", () => {
     expect(byName(checks, "image-inputs").detail).toContain("managed image key");
     expect(byName(checks, "image-fresh")).toMatchObject({ ok: false, hard: false });
     expect(byName(checks, "image-fresh").detail).toContain("no state row");
-    expect(hasHardFailure(checks)).toBe(false);
+    expect(hasHardFailure(checks)).toBe(!nodeVersionOk(process.versions.node));
   });
 
   it("--deep probes browser test dependencies inside the configured Odoo image", async () => {

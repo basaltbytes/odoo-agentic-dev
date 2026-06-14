@@ -6,10 +6,11 @@ Projects describe themselves with one typed recipe file (`odoo-agentic-dev.confi
 
 ## Requirements
 
-- Node.js 22.15 or newer (the state registry uses the built-in `node:sqlite` — no native dependency)
-- npm — or any package manager (yarn, pnpm; this repo itself is developed with pnpm)
-- Docker (Docker Desktop on macOS, Docker Engine on Linux) — `info` works without it
-- Windows: **WSL2 only**. Native PowerShell / `cmd.exe` execution is not supported in v1.
+- Node.js 22.22.2+ on the Node 22 line, or Node.js 24.15.0+ (the state registry uses the built-in `node:sqlite` — no native dependency)
+- npm, pnpm, yarn, or another Node package manager
+- Git
+- Docker with Compose v2 (Docker Desktop on macOS, Docker Engine or Docker Desktop on Linux/WSL2) — `info` works without Docker running
+- macOS, Linux, or Windows through WSL2
 
 WSL2 guidance:
 
@@ -18,10 +19,27 @@ WSL2 guidance:
 - enable Docker Desktop WSL integration
 - pass paths as Linux paths
 
+## Installation
+
+Install the global front door once:
+
+```bash
+npm install -g @basaltbytes/odoo-agentic-dev
+oad --version
+oad doctor
+```
+
+Then pin the package inside each Odoo project that uses it:
+
+```bash
+npm install -D @basaltbytes/odoo-agentic-dev
+```
+
+The global `oad` delegates to the project-local install when one is present, so day-to-day commands run the exact version recorded in the project's lockfile. Other package managers work too, for example `pnpm add -g`, `yarn global add`, or `bun add -g`.
+
 ## Quickstart
 
 ```bash
-npm install -g @basaltbytes/odoo-agentic-dev   # global `oad` / `odoo-agentic-dev`
 cd your-odoo-project
 oad init        # scaffold odoo-agentic-dev.config.ts (project id from the folder name)
 npm install -D @basaltbytes/odoo-agentic-dev  # pin the version: config types, hooks, delegation target
@@ -397,7 +415,7 @@ The safety contract:
 
 ### `oad doctor`
 
-Environment health report (`✓`/`✗` per check, or `--json`): Docker daemon responsive, Compose is v2, Node >= 22.15, config discovery + validation (soft when absent), context derivation, Odoo port free or its holder identified, port collisions among known stacks, state registry openable and writable, image input/freshness checks, git on PATH, WSL2 detection with setup guidance, and the current prune-candidate count. Exits 1 if any hard check fails.
+Environment health report (`✓`/`✗` per check, or `--json`): Docker daemon responsive, Compose is v2, Node satisfies the package engine range, config discovery + validation (soft when absent), context derivation, Odoo port free or its holder identified, port collisions among known stacks, state registry openable and writable, image input/freshness checks, git on PATH, WSL2 detection with setup guidance, and the current prune-candidate count. Exits 1 if any hard check fails.
 
 | Flag | Meaning |
 | --- | --- |
@@ -523,7 +541,7 @@ Attached `up` (without `--detach`) streams forever and never reaches a final lin
 
 ## State Registry
 
-Every lifecycle command records its environment (compose project, database, root dir, branch, port, timestamps, template metadata) in a machine-global SQLite registry at `${XDG_DATA_HOME:-~/.local/share}/odoo-agentic-dev/state.db`, overridable via the `ODOO_AGENTIC_DEV_STATE_DB` environment variable. It needs no setup and no external dependency (built-in `node:sqlite`, hence Node >= 22.15).
+Every lifecycle command records its environment (compose project, database, root dir, branch, port, timestamps, template metadata) in a machine-global SQLite registry at `${XDG_DATA_HOME:-~/.local/share}/odoo-agentic-dev/state.db`, overridable via the `ODOO_AGENTIC_DEV_STATE_DB` environment variable. It needs no setup and no external dependency beyond the supported Node runtime.
 
 The registry is an index — Docker is the truth. Generated compose files stamp `dev.basaltbytes.oad.*` identity labels on services and volumes so `list`/`prune`/`doctor` can reconcile rows against reality and re-adopt stacks whose rows were lost. Project-supplied compose files (recipe `compose.file`) are not labeled; those environments are tracked by their registry rows alone.
 
@@ -635,7 +653,9 @@ Then rebuild and rerun with `oad test --build ...`, `oad restart --rebuild`, or 
 
 ## Releasing
 
-Releases are published by CI via [npm trusted publishing](https://docs.npmjs.com/trusted-publishers) (OIDC) — no npm token exists anywhere. The repository and package are public, so npm generates provenance attestations for trusted-publishing releases. Bump the version in `package.json`, commit, tag `v<version>`, and push the tag; `.github/workflows/release.yml` runs the full gate (`prepublishOnly`), publishes with provenance, and creates a GitHub Release with generated notes. The tag must match `package.json` or the workflow refuses.
+Releases are published by CI via [npm trusted publishing](https://docs.npmjs.com/trusted-publishers) (OIDC) — no npm token exists anywhere. The repository and package are public, so npm generates provenance attestations for trusted-publishing releases. Bump the version in `package.json`, commit, tag `v<version>`, and push the tag; `.github/workflows/release.yml` runs the full gate (`prepublishOnly`), including a packed npm install smoke test, publishes with provenance, and creates a GitHub Release with generated notes. The tag must match `package.json` or the workflow refuses.
+
+The npm tarball intentionally contains only the compiled CLI/library output, `README.md`, `LICENSE`, `package.json`, and `docs/AGENTS-SNIPPET.md`. It does not ship repository tests, source TypeScript, or CI-only scripts.
 
 ## Development
 
@@ -643,12 +663,13 @@ Releases are published by CI via [npm trusted publishing](https://docs.npmjs.com
 pnpm install
 pnpm build         # compile to dist/
 pnpm test          # unit + e2e tests (e2e runs against dist/cli.js when built)
+pnpm package:smoke # pack, install into a temp project, and smoke-test oad
 pnpm typecheck     # tsc --noEmit over src + test
 pnpm lint          # oxlint
 pnpm format        # oxfmt --write
 pnpm format:check  # oxfmt --check
 ```
 
-The test suite never requires Docker, Git state, or a network connection — adapters are faked, and every state-touching test pins `ODOO_AGENTIC_DEV_STATE_DB` to a temp file so your real registry is never touched. `scripts/docker-integration.sh` is a separate minimal Docker integration check (compose file generation + validation against a real Docker) used by the Linux CI job; it is not part of `pnpm test`.
+The test suite never requires Docker, Git state, or a network connection — adapters are faked, and every state-touching test pins `ODOO_AGENTIC_DEV_STATE_DB` to a temp file so your real registry is never touched. `scripts/docker-integration.sh` is a separate minimal Docker integration check (compose file generation + validation against a real Docker) used by the Linux CI job; it is not part of `pnpm test`. `pnpm package:smoke` installs the packed tarball with npm in a temporary project, so it may need registry access to resolve runtime dependencies.
 
-CI runs lint/typecheck/build/test on Linux, macOS, and Windows across Node 22 and 24 (the Windows job exercises the dry-run unit suite only — no Docker), plus the Docker integration job on Linux. A nightly workflow (`.github/workflows/nightly.yml`, also runnable via `workflow_dispatch`) exercises the real `odoo:18` + `postgres:16` lifecycle end to end: `setup` with a template snapshot, `reset-db` down the template restore path, `update base`, and a fully clean `down --volumes`.
+CI runs lint/typecheck/build/test on Linux, macOS, and Windows across Node 22 and 24 (the Windows job exercises the dry-run unit suite only — no Docker), plus Docker integration and packed npm install smoke jobs on Linux. A nightly workflow (`.github/workflows/nightly.yml`, also runnable via `workflow_dispatch`) exercises the real `odoo:18` + `postgres:16` lifecycle end to end: `setup` with a template snapshot, `reset-db` down the template restore path, `update base`, and a fully clean `down --volumes`.

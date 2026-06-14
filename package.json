@@ -27,7 +27,8 @@
     "odoo-agentic-dev": "./dist/cli.js"
   },
   "files": [
-    "dist"
+    "dist",
+    "docs/AGENTS-SNIPPET.md"
   ],
   "type": "module",
   "main": "./dist/index.js",
@@ -51,7 +52,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc -p tsconfig.json",
-    "prepublishOnly": "pnpm lint && pnpm format:check && pnpm typecheck && pnpm build && pnpm test"
+    "package:smoke": "bash scripts/npm-smoke.sh",
+    "prepublishOnly": "pnpm lint && pnpm format:check && pnpm typecheck && pnpm build && pnpm test && pnpm package:smoke"
   },
   "dependencies": {
     "@effect/platform-node": "4.0.0-beta.78",
@@ -74,6 +76,6 @@
     }
   },
   "engines": {
-    "node": ">=22.15"
+    "node": "^22.22.2 || >=24.15.0"
   }
 }

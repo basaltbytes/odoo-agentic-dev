@@ -27,10 +27,31 @@ export type DoctorCheck = {
   readonly detail: string;
 };
 
-/** Engines floor: Node >= 22.15 (first unflagged node:sqlite). */
+const NODE_VERSION_REQUIREMENT = "22.22.2+ on Node 22, or 24.15.0+";
+
+const atLeast = (
+  actual: readonly [number, number, number],
+  expected: readonly [number, number, number],
+): boolean => {
+  for (let i = 0; i < expected.length; i++) {
+    if (actual[i]! > expected[i]!) return true;
+    if (actual[i]! < expected[i]!) return false;
+  }
+  return true;
+};
+
+/**
+ * Runtime engine floor mirrors package.json and the npm runtime dependency
+ * graph. node:sqlite arrives earlier, but npm installs warn below this range.
+ */
 export const nodeVersionOk = (version: string): boolean => {
-  const [major = 0, minor = 0] = version.split(".").map((part) => Number.parseInt(part, 10));
-  return major > 22 || (major === 22 && minor >= 15);
+  const [major = 0, minor = 0, patch = 0] = version
+    .split(".")
+    .map((part) => Number.parseInt(part, 10));
+  const actual = [major, minor, patch] as const;
+  if (major === 22) return atLeast(actual, [22, 22, 2]);
+  if (major >= 24) return atLeast(actual, [24, 15, 0]);
+  return false;
 };
 
 /**
@@ -129,7 +150,7 @@ export const collectDoctorChecks = (
       name: "node-version",
       ok: nodeVersionOk(process.versions.node),
       hard: true,
-      detail: `node ${process.versions.node} (need >= 22.15)`,
+      detail: `node ${process.versions.node} (need ${NODE_VERSION_REQUIREMENT})`,
     });
 
     const config = yield* loadRecipe({
