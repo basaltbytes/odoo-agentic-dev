@@ -45,6 +45,7 @@ export type JsonReport = {
   readonly composeProject: string | null;
   readonly odooHttpPort: number | null;
   readonly odooUrl: string | null;
+  readonly odooExplicitDbUrl: string | null;
   readonly actions: ReadonlyArray<string>;
   readonly durationMs: number;
   /** child exit code, when the command ran one to completion (`test`) */
@@ -168,8 +169,9 @@ export const withJsonReport = <A, E, R>(
         composeProjectName: resolved === null ? null : resolved.composeProjectName,
         composeProject: resolved === null ? null : resolved.composeProjectName,
         odooHttpPort: resolved === null ? null : resolved.odooHttpPort,
-        odooUrl:
-          resolved === null ? null : `${resolved.odooBaseUrl}/web?db=${resolved.databaseName}`,
+        odooUrl: resolved === null ? null : resolved.odooWebUrl,
+        odooExplicitDbUrl:
+          resolved === null ? null : `${resolved.odooWebUrl}?db=${resolved.databaseName}`,
         actions,
         durationMs: Date.now() - startedAt,
         ...(exitCode === undefined ? {} : { exitCode }),

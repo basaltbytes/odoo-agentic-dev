@@ -69,9 +69,9 @@ describe("withJsonReport", () => {
       database: ctx.databaseName,
       composeProjectName: ctx.composeProjectName,
       odooHttpPort: ctx.odooHttpPort,
-      // legacy alias kept for the frozen e2e/nightly contract
       composeProject: ctx.composeProjectName,
-      odooUrl: `${ctx.odooBaseUrl}/web?db=${ctx.databaseName}`,
+      odooUrl: ctx.odooWebUrl,
+      odooExplicitDbUrl: `${ctx.odooWebUrl}?db=${ctx.databaseName}`,
       actions: ["decorative line", "compose-up"],
     });
     expect(typeof parsed.durationMs).toBe("number");
@@ -112,6 +112,7 @@ describe("withJsonReport", () => {
       composeProject: null,
       odooHttpPort: null,
       odooUrl: null,
+      odooExplicitDbUrl: null,
       error: { tag: "StateError", message: "boom" },
     });
   });

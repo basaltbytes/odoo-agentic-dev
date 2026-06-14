@@ -33,7 +33,8 @@ describe("info output", () => {
     expect(text).toContain("Worktree: feature/KL-123-payment-flow");
     expect(text).toContain("Database: kl_123_payment_flow");
     expect(text).toContain("Compose project: kriss_laure_kl_123_payment_flow");
-    expect(text).toMatch(/Odoo URL: http:\/\/127\.0\.0\.1:\d+\/web\?db=kl_123_payment_flow/);
+    expect(text).toMatch(/Odoo URL: http:\/\/127\.0\.0\.1:\d+\/web/);
+    expect(text).not.toContain("?db=");
     expect(text).toMatch(/pwa URL: http:\/\/localhost:\d+/);
   });
 
@@ -44,6 +45,8 @@ describe("info output", () => {
     expect(a.databaseName).toBe("kl_123_payment_flow");
     expect(a.composeProjectName).toBe("kriss_laure_kl_123_payment_flow");
     expect(typeof a.odooHttpPort).toBe("number");
+    expect(a.odooUrl).toBe(ctx.odooWebUrl);
+    expect(a.odooExplicitDbUrl).toBe(`${ctx.odooWebUrl}?db=${ctx.databaseName}`);
     expect(a.companions.pwa).toBe(ctx.companionPorts.get("pwa"));
     expect(a.env.ODOO_DATABASE).toBe("kl_123_payment_flow");
   });
