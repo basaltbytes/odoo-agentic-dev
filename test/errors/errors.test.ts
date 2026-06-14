@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   CommandFailedError,
+  ComposeCommandError,
   ConfigValidationError,
   PortConflictError,
   SharedDatabaseProtectionError,
@@ -35,6 +36,19 @@ describe("renderError", () => {
     expect(text).toContain("17");
     expect(text).toContain("output (tail)");
     expect(text).toContain("boom");
+  });
+
+  it("renders compose failures with the derived project and debug command", () => {
+    const text = renderError(
+      new ComposeCommandError({
+        args: ["compose", "-p", "kl_feature_x", "ps"],
+        exitCode: 1,
+        stderrTail: "container failed",
+      }),
+    );
+    expect(text).toContain("Compose project: kl_feature_x");
+    expect(text).toContain("docker compose -p kl_feature_x ps");
+    expect(text).toContain("container failed");
   });
 
   it("renders validation issues as a list", () => {

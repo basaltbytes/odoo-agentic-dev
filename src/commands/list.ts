@@ -12,7 +12,8 @@ import type {
 } from "../platform/docker-compose.js";
 import { StateStore } from "../platform/state-store.js";
 import type { StateStoreApi } from "../platform/state-store.js";
-import { resolveProjectId } from "./resolve-context.js";
+import { withStateDbRoot } from "../platform/state-store.js";
+import { resolveProjectScope } from "./resolve-context.js";
 
 export type ListEntry = {
   readonly row: EnvironmentRow;
@@ -142,8 +143,10 @@ export const listCommand = Command.make(
   },
   (flags) =>
     Effect.gen(function* () {
-      const projectId = yield* resolveProjectId(flags.config, flags.allProjects);
-      const { dockerAvailable, entries } = yield* collectListEntries(projectId);
+      const scope = yield* resolveProjectScope(flags.config, flags.allProjects);
+      const { dockerAvailable, entries } = yield* scope.rootDir === undefined
+        ? collectListEntries(scope.projectId)
+        : withStateDbRoot(scope.rootDir, collectListEntries(scope.projectId));
       if (!dockerAvailable) {
         yield* Console.error("warning: docker is unreachable — every stack reads as vanished");
       }

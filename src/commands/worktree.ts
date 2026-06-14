@@ -23,6 +23,7 @@ import { DockerCompose } from "../platform/docker-compose.js";
 import type { DockerComposeApi } from "../platform/docker-compose.js";
 import { StateStore } from "../platform/state-store.js";
 import type { StateStoreApi } from "../platform/state-store.js";
+import { withStateDbRoot } from "../platform/state-store.js";
 import type { OdooLifecycleApi } from "../platform/odoo-lifecycle.js";
 import { runSetup } from "./setup.js";
 import { withStdoutRedirectedToStderr } from "./json-report.js";
@@ -387,7 +388,7 @@ export const runWorktreeRemove = (
         yield* compose.ensureAvailable();
         const ref = yield* compose.prepareComposeFile(discovered.recipe, ctx);
         yield* compose.run(ref, ["down", "--volumes"]);
-        yield* store.remove(ctx.composeProjectName);
+        yield* withStateDbRoot(discovered.rootDir, store.remove(ctx.composeProjectName));
         yield* log(`removed ${ctx.composeProjectName} from the registry`);
         return;
       }
@@ -411,7 +412,7 @@ export const runWorktreeRemove = (
     yield* log(`worktree dir gone; tearing down ${ctx.composeProjectName} by container label`);
     yield* compose.ensureAvailable();
     yield* compose.removeByLabel(ctx.composeProjectName);
-    yield* store.remove(ctx.composeProjectName);
+    yield* withStateDbRoot(current.rootDir, store.remove(ctx.composeProjectName));
     yield* log(`removed ${ctx.composeProjectName} from the registry`);
   });
 

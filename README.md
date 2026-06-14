@@ -329,7 +329,7 @@ Demo data is controlled at database initialization time, not per test run. The r
 
 The first successful full init (from `setup` or `reset-db`) is snapshotted — after the post-init hooks — as a PostgreSQL template database named `<database>__tpl` plus a filestore copy. Subsequent `reset-db` runs restore from that template in seconds instead of re-running module installation; post-init hooks are **not** re-run on restore because their effects are baked into the snapshot.
 
-Snapshots carry a key derived from the database-shaping recipe inputs: `initialModules`, `withoutDemo`, `odoo.version`, `postInit`, the Odoo addons path configuration, `odoo.configFile`, and the declared Odoo image inputs (`odoo.build`, `odoo.dockerfile`, `odoo.imageName`, plus the contents of declared requirements/copy/config files). Changing any of these invalidates the template: the next `reset-db` automatically falls back to a full init and takes a fresh snapshot. One-off `--modules`/`--without-demo` overrides always force a full init without touching the stored template.
+Snapshots carry a key derived from the database-shaping recipe inputs: `initialModules`, `withoutDemo`, `odoo.version`, `postInit`, the Odoo addons path configuration, `odoo.configFile`, the declared Odoo image inputs (`odoo.build`, `odoo.dockerfile`, `odoo.imageName`, plus the contents of declared requirements/copy/config files), and database-shaping files under mounted addon roots: manifests, `security`, `views`, `data`, `demo`, `i18n`, and test config files. Changing any of these invalidates the template: the next `reset-db` automatically falls back to a full init and takes a fresh snapshot. One-off `--modules`/`--without-demo` overrides always force a full init without touching the stored template.
 
 - `database.template: false` disables restore and snapshot caching for the recipe. `setup` and `reset-db` run a full init and do not create `<database>__tpl`.
 - `--no-template` forces a full init for one run, keeping the existing snapshot.
@@ -419,11 +419,11 @@ The safety contract:
 
 ### `oad doctor`
 
-Environment health report (`✓`/`✗` per check, or `--json`): Docker daemon responsive, Compose is v2, Node satisfies the package engine range, config discovery + validation (soft when absent), context derivation, Odoo port free or its holder identified, port collisions among known stacks, state registry openable and writable, image input/freshness checks, git on PATH, WSL2 detection with setup guidance, and the current prune-candidate count. Exits 1 if any hard check fails.
+Environment health report (`✓`/`✗` per check, or `--json`): Docker daemon responsive, Compose is v2, Node satisfies the package engine range, config discovery + validation (soft when absent), context derivation, Odoo port free or its holder identified, port collisions among known stacks, state registry path/openability/writability, image input/freshness checks, template snapshot freshness, git on PATH, WSL2 detection with setup guidance, and the current prune-candidate count. Exits 1 if any hard check fails.
 
 | Flag | Meaning |
 | --- | --- |
-| `--deep` | run slower container probes such as browser-test dependency checks |
+| `--deep` | run slower container probes such as template database existence and browser-test dependency checks |
 | `--json` | print the checks array as JSON |
 | `--config <path>` | explicit config file path |
 
@@ -546,7 +546,7 @@ Attached `up` (without `--detach`) streams forever and never reaches a final lin
 
 ## State Registry
 
-Every lifecycle command records its environment (compose project, database, root dir, branch, port, timestamps, template metadata) in a machine-global SQLite registry at `${XDG_DATA_HOME:-~/.local/share}/odoo-agentic-dev/state.db`, overridable via the `ODOO_AGENTIC_DEV_STATE_DB` environment variable. It needs no setup and no external dependency beyond the supported Node runtime.
+Every lifecycle command records its environment (compose project, database, root dir, branch, port, timestamps, template metadata) in a shared SQLite registry so `list`, `prune`, port holder detection, and cleanup can see sibling worktrees. The default shared path is `${XDG_DATA_HOME:-~/.local/share}/odoo-agentic-dev/state.db`. If that location cannot be created or written (for example inside a restricted Codex sandbox), the CLI falls back to `.odoo-agentic-dev/state.db` under the nearest `odoo-agentic-dev.config.*` root, or under the current working directory when no config is discoverable. `ODOO_AGENTIC_DEV_STATE_DB` remains an absolute override for CI, tests, or an explicitly chosen repo-local registry. The registry needs no setup and no external dependency beyond the supported Node runtime.
 
 The registry is an index — Docker is the truth. Generated compose files stamp `dev.basaltbytes.oad.*` identity labels on services and volumes so `list`/`prune`/`doctor` can reconcile rows against reality and re-adopt stacks whose rows were lost. Project-supplied compose files (recipe `compose.file`) are not labeled; those environments are tracked by their registry rows alone.
 
@@ -578,7 +578,7 @@ Every compose subprocess runs with the full context env exported (the same varia
 | `ODOO_COMPOSE_PROJECT_NAME` | Docker Compose project |
 | `ODOO_WORKTREE_NAME` | Override for derived worktree name |
 | `ODOO_WORKTREE_CONFIG` | Config file path override |
-| `ODOO_AGENTIC_DEV_STATE_DB` | State registry path override (default `${XDG_DATA_HOME:-~/.local/share}/odoo-agentic-dev/state.db`) |
+| `ODOO_AGENTIC_DEV_STATE_DB` | State registry path override (default shared state DB, with worktree-local fallback when the shared location is not writable) |
 
 Explicit env overrides win over derived values, but `E2E_ODOO_DB` and `ODOO_DATABASE` must not disagree.
 

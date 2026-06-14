@@ -6,6 +6,7 @@ import { assertSharedDatabaseAllowed } from "../core/safety.js";
 import { DockerCompose } from "../platform/docker-compose.js";
 import { StateStore } from "../platform/state-store.js";
 import type { StateStoreApi } from "../platform/state-store.js";
+import { withStateDbRoot } from "../platform/state-store.js";
 import { resolveContext } from "./resolve-context.js";
 import { withJsonReport } from "./json-report.js";
 import type { SharedDatabaseProtectionError, StateError } from "../errors/errors.js";
@@ -34,12 +35,15 @@ export const finalizeDownState = (
   ctx: WorktreeContext,
   flags: { volumes: boolean },
 ): Effect.Effect<void, StateError, StateStoreApi> =>
-  Effect.gen(function* () {
-    const store = yield* StateStore;
-    yield* flags.volumes
-      ? store.remove(ctx.composeProjectName)
-      : store.touch(ctx.composeProjectName);
-  });
+  withStateDbRoot(
+    ctx.rootDir,
+    Effect.gen(function* () {
+      const store = yield* StateStore;
+      yield* flags.volumes
+        ? store.remove(ctx.composeProjectName)
+        : store.touch(ctx.composeProjectName);
+    }),
+  );
 
 export const downCommand = Command.make(
   "down",

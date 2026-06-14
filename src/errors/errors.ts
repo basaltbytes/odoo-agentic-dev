@@ -114,6 +114,10 @@ export class SourceResolverError extends Data.TaggedError("SourceResolverError")
 
 export class StateError extends Data.TaggedError("StateError")<{
   readonly reason: string;
+  readonly path?: string | undefined;
+  readonly parentDir?: string | undefined;
+  readonly parentExists?: boolean | undefined;
+  readonly parentWritable?: boolean | undefined;
 }> {
   override get message(): string {
     return this.reason;
@@ -193,6 +197,19 @@ export const isRuntimeError = (u: unknown): u is RuntimeError =>
 
 const lines = (...xs: ReadonlyArray<string>): string => xs.join("\n");
 
+const composeProjectFromArgs = (args: ReadonlyArray<string>): string | null => {
+  const projectFlag = args.indexOf("-p");
+  const project = projectFlag === -1 ? undefined : args[projectFlag + 1];
+  return project === undefined || project.length === 0 ? null : project;
+};
+
+const composeDebugLine = (args: ReadonlyArray<string>): string => {
+  const project = composeProjectFromArgs(args);
+  return project === null
+    ? "Next: re-run the docker compose command above, or inspect the generated compose file."
+    : `Next: inspect with \`odoo-agentic-dev compose -- ps\` or \`docker compose -p ${project} ps\`.`;
+};
+
 export const renderError = (error: RuntimeError): string => {
   switch (error._tag) {
     case "ConfigLoadError":
@@ -244,12 +261,18 @@ export const renderError = (error: RuntimeError): string => {
     case "ComposeCommandError":
       return lines(
         `docker compose failed (exit ${error.exitCode}): docker ${error.args.join(" ")}`,
+        ...(composeProjectFromArgs(error.args) === null
+          ? []
+          : [`Compose project: ${composeProjectFromArgs(error.args)}`]),
         error.stderrTail.length > 0 ? `stderr (tail):\n${error.stderrTail}` : "stderr: (empty)",
-        "Next: check container logs with `odoo-agentic-dev up --logs`.",
+        composeDebugLine(error.args),
       );
     case "OdooCommandError":
       return lines(
         `Odoo command failed (exit ${error.exitCode}): docker ${error.args.join(" ")}`,
+        ...(composeProjectFromArgs(error.args) === null
+          ? []
+          : [`Compose project: ${composeProjectFromArgs(error.args)}`]),
         error.stderrTail.length > 0 ? `output (tail):\n${error.stderrTail}` : "output: (empty)",
         "Next: inspect the Odoo log output above.",
       );
@@ -264,10 +287,29 @@ export const renderError = (error: RuntimeError): string => {
         "Next: pass --target <path> or set odoo.source in the config.",
       );
     case "StateError":
+      if (error.path !== undefined) {
+        return lines(
+          `State registry error: ${error.reason}`,
+          `State DB: ${error.path}`,
+          `Parent directory: ${error.parentDir ?? "(unknown)"} (${
+            error.parentExists === undefined
+              ? "existence unknown"
+              : error.parentExists
+                ? "exists"
+                : "missing"
+          }, ${
+            error.parentWritable === undefined
+              ? "writability unknown"
+              : error.parentWritable
+                ? "writable"
+                : "not writable"
+          })`,
+          "Next: set ODOO_AGENTIC_DEV_STATE_DB to a writable path, or make the parent directory writable.",
+        );
+      }
       return lines(
         `State registry error: ${error.reason}`,
-        "Next: check the state database file (default ~/.local/share/odoo-agentic-dev/state.db,",
-        "overridable via ODOO_AGENTIC_DEV_STATE_DB) and retry.",
+        "Next: check the state database file, or set ODOO_AGENTIC_DEV_STATE_DB to a writable path.",
       );
     case "PortConflictError":
       return lines(

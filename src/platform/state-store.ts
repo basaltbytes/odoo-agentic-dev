@@ -1,6 +1,6 @@
-import { mkdirSync } from "node:fs";
+import { accessSync, constants, existsSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 // node:sqlite is imported lazily inside StateStoreLive: Node evaluates builtin
 // modules before any user module runs, so a static import would emit the
 // ExperimentalWarning before cli.ts can install its filter.
@@ -46,12 +46,121 @@ export interface StateStoreApi {
 }
 
 export const StateStore = Context.Service<StateStoreApi>("odoo-agentic-dev/StateStore");
+export const StateDbPath = Context.Reference<string | null>("odoo-agentic-dev/StateDbPath", {
+  defaultValue: () => null,
+});
 type SqliteModule = typeof import("node:sqlite");
 
-/** Global registry location; `ODOO_AGENTIC_DEV_STATE_DB` overrides (tests). */
-export const resolveStateDbPath = (env: Record<string, string | undefined> = process.env): string =>
-  env["ODOO_AGENTIC_DEV_STATE_DB"] ??
+const CONFIG_FILENAMES = [
+  "odoo-agentic-dev.config.ts",
+  "odoo-agentic-dev.config.mts",
+  "odoo-agentic-dev.config.js",
+  "odoo-agentic-dev.config.mjs",
+] as const;
+
+const findNearestConfigDir = (startDir: string): string | null => {
+  let dir = resolve(startDir);
+  for (;;) {
+    for (const filename of CONFIG_FILENAMES) {
+      if (existsSync(join(dir, filename))) return dir;
+    }
+    const parent = dirname(dir);
+    if (parent === dir) return null;
+    dir = parent;
+  }
+};
+
+export type StateDbTarget = {
+  readonly path: string;
+  readonly parentDir: string;
+  readonly parentExists: boolean;
+  readonly parentWritable: boolean;
+  readonly override: boolean;
+  readonly source: "env-override" | "shared-default" | "local-fallback";
+};
+
+export const localStateDbPath = (rootDir: string): string =>
+  join(rootDir, ".odoo-agentic-dev", "state.db");
+
+export const sharedStateDbPath = (env: Record<string, string | undefined> = process.env): string =>
   join(env["XDG_DATA_HOME"] ?? join(homedir(), ".local", "share"), "odoo-agentic-dev", "state.db");
+
+const prepareParent = (path: string): boolean => {
+  try {
+    const parent = dirname(path);
+    mkdirSync(parent, { recursive: true });
+    accessSync(parent, constants.W_OK);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+const defaultLocalStateDbPath = (cwd: string): string =>
+  localStateDbPath(findNearestConfigDir(cwd) ?? resolve(cwd));
+
+/**
+ * State is shared by default so `list`/`prune` can see sibling worktrees. In a
+ * sandbox where the shared location cannot be prepared, fall back to a
+ * worktree-local DB. The env override remains absolute authority for tests,
+ * CI, and users who intentionally want a specific registry path.
+ */
+export const resolveStateDbPath = (
+  env: Record<string, string | undefined> = process.env,
+  options: {
+    readonly cwd?: string | undefined;
+    readonly rootDir?: string | undefined;
+    readonly fallbackPath?: string | undefined;
+  } = {},
+): string => {
+  const override = env["ODOO_AGENTIC_DEV_STATE_DB"];
+  if (override !== undefined && override !== "") return override;
+  const cwd = options.cwd ?? process.cwd();
+  const fallback =
+    options.fallbackPath ??
+    (options.rootDir !== undefined
+      ? localStateDbPath(options.rootDir)
+      : defaultLocalStateDbPath(cwd));
+  const shared = sharedStateDbPath(env);
+  return prepareParent(shared) ? shared : fallback;
+};
+
+export const describeStateDbTarget = (
+  path: string = resolveStateDbPath(),
+  env: Record<string, string | undefined> = process.env,
+): StateDbTarget => {
+  const parentDir = dirname(path);
+  const parentExists = existsSync(parentDir);
+  let parentWritable = false;
+  if (parentExists) {
+    try {
+      accessSync(parentDir, constants.W_OK);
+      parentWritable = true;
+    } catch {
+      parentWritable = false;
+    }
+  }
+  const override = env["ODOO_AGENTIC_DEV_STATE_DB"];
+  const hasOverride = override !== undefined && override !== "";
+  const source = hasOverride
+    ? "env-override"
+    : path === sharedStateDbPath(env)
+      ? "shared-default"
+      : "local-fallback";
+  return {
+    path,
+    parentDir,
+    parentExists,
+    parentWritable,
+    override: hasOverride,
+    source,
+  };
+};
+
+export const withStateDbRoot = <A, E, R>(
+  rootDir: string,
+  effect: Effect.Effect<A, E, R>,
+): Effect.Effect<A, E, R> => Effect.provideService(effect, StateDbPath, localStateDbPath(rootDir));
 
 const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS schema_meta (
@@ -131,10 +240,23 @@ const migrateSchema = (db: DatabaseSync) => {
 export const StateStoreLive = Layer.effect(
   StateStore,
   Effect.sync(() => {
-    const attempt = <A>(label: string, thunk: () => A): Effect.Effect<A, StateError> =>
+    const attempt = <A>(
+      label: string,
+      path: string,
+      thunk: () => A,
+    ): Effect.Effect<A, StateError> =>
       Effect.try({
         try: thunk,
-        catch: (cause) => new StateError({ reason: `${label}: ${String(cause)}` }),
+        catch: (cause) => {
+          const target = describeStateDbTarget(path);
+          return new StateError({
+            reason: `${label}: ${String(cause)}`,
+            path: target.path,
+            parentDir: target.parentDir,
+            parentExists: target.parentExists,
+            parentWritable: target.parentWritable,
+          });
+        },
       });
 
     let sqlitePromise: Promise<SqliteModule> | undefined;
@@ -153,8 +275,9 @@ export const StateStoreLive = Layer.effect(
     ): Effect.Effect<A, StateError> =>
       Effect.gen(function* () {
         const sqlite = yield* loadSqlite();
-        return yield* attempt(label, () => {
-          const path = resolveStateDbPath();
+        const scopedPath = yield* StateDbPath;
+        const path = resolveStateDbPath(process.env, { fallbackPath: scopedPath ?? undefined });
+        return yield* attempt(label, path, () => {
           mkdirSync(dirname(path), { recursive: true });
           const db = new sqlite.DatabaseSync(path, { timeout: 5000 });
           try {

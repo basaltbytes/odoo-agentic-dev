@@ -29,19 +29,25 @@ export const resolveContext = (
     return { recipe, ctx };
   });
 
+export type ProjectScope = {
+  readonly projectId: string | undefined;
+  readonly rootDir: string | undefined;
+};
+
 /**
  * Project scope for `list`/`prune`: `--all-projects` means "no filter" and
  * deliberately skips config discovery entirely, so these commands work from
- * any directory; otherwise the discovered recipe's project id is the scope.
+ * any directory. Otherwise the discovered recipe's project id filters rows and
+ * its root scopes the worktree-local state DB.
  */
-export const resolveProjectId = (
+export const resolveProjectScope = (
   configFlag: Option.Option<string>,
   allProjects: boolean,
-): Effect.Effect<string | undefined, ConfigLoadError | ConfigValidationError> =>
+): Effect.Effect<ProjectScope, ConfigLoadError | ConfigValidationError> =>
   allProjects
-    ? Effect.succeed(undefined)
+    ? Effect.succeed({ projectId: undefined, rootDir: undefined })
     : loadRecipe({
         cwd: process.cwd(),
         explicitPath: Option.getOrUndefined(configFlag),
         env: process.env,
-      }).pipe(Effect.map(({ recipe }) => recipe.project.id));
+      }).pipe(Effect.map(({ recipe, rootDir }) => ({ projectId: recipe.project.id, rootDir })));

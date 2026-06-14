@@ -10,6 +10,7 @@ import { OdooLifecycle } from "../platform/odoo-lifecycle.js";
 import type { OdooLifecycleApi } from "../platform/odoo-lifecycle.js";
 import { StateStore } from "../platform/state-store.js";
 import type { StateStoreApi } from "../platform/state-store.js";
+import { withStateDbRoot } from "../platform/state-store.js";
 import { resolveContext } from "./resolve-context.js";
 import {
   buildImageAndRecord,
@@ -69,51 +70,54 @@ export const runResetFlow = (
   ctx: WorktreeContext,
   options: ResetFlowOptions,
 ): Effect.Effect<ResetPath, RuntimeError, OdooLifecycleApi | StateStoreApi> =>
-  Effect.gen(function* () {
-    const say = options.say ?? Console.log;
-    const store = yield* StateStore;
-    const lifecycle = yield* OdooLifecycle;
-    const expectedKey = yield* computeTemplateKeyForContext(recipe, ctx);
-    const row = yield* store.get(ctx.composeProjectName);
-    const path = decideResetPath({
-      row,
-      expectedKey,
-      databaseName: ctx.databaseName,
-      noTemplate: options.noTemplate,
-      refreshTemplate: options.refreshTemplate,
-      hasOverrides: options.modules !== undefined || options.withoutDemo !== undefined,
-      templateEnabled: recipe.database.template,
-    });
-
-    if (path === "restore") {
-      yield* say(
-        `Restoring database: ${ctx.databaseName} (from template ${templateDbName(ctx.databaseName)})`,
-      );
-      yield* lifecycle.restoreFromTemplate(recipe, ctx, { build: options.build });
-      yield* say("Restored from template (post-init hooks already baked in).");
-      return path;
-    }
-
-    yield* say(`Resetting database: ${ctx.databaseName}`);
-    yield* say(`Compose project:    ${ctx.composeProjectName}`);
-    yield* lifecycle.resetDatabase(recipe, ctx, {
-      modules: options.modules,
-      withoutDemo: options.withoutDemo,
-      build: options.build,
-    });
-    yield* lifecycle.runPostInitHooks(recipe, ctx);
-    if (path === "full-then-snapshot") {
-      yield* lifecycle.snapshotTemplate(recipe, ctx);
-      yield* store.setTemplate(ctx.composeProjectName, {
-        databaseName: templateDbName(ctx.databaseName),
-        key: expectedKey,
+  withStateDbRoot(
+    ctx.rootDir,
+    Effect.gen(function* () {
+      const say = options.say ?? Console.log;
+      const store = yield* StateStore;
+      const lifecycle = yield* OdooLifecycle;
+      const expectedKey = yield* computeTemplateKeyForContext(recipe, ctx);
+      const row = yield* store.get(ctx.composeProjectName);
+      const path = decideResetPath({
+        row,
+        expectedKey,
+        databaseName: ctx.databaseName,
+        noTemplate: options.noTemplate,
+        refreshTemplate: options.refreshTemplate,
+        hasOverrides: options.modules !== undefined || options.withoutDemo !== undefined,
+        templateEnabled: recipe.database.template,
       });
-      yield* say(`Template snapshot saved: ${templateDbName(ctx.databaseName)}`);
-    } else if (!recipe.database.template) {
-      yield* store.setTemplate(ctx.composeProjectName, null);
-    }
-    return path;
-  });
+
+      if (path === "restore") {
+        yield* say(
+          `Restoring database: ${ctx.databaseName} (from template ${templateDbName(ctx.databaseName)})`,
+        );
+        yield* lifecycle.restoreFromTemplate(recipe, ctx, { build: options.build });
+        yield* say("Restored from template (post-init hooks already baked in).");
+        return path;
+      }
+
+      yield* say(`Resetting database: ${ctx.databaseName}`);
+      yield* say(`Compose project:    ${ctx.composeProjectName}`);
+      yield* lifecycle.resetDatabase(recipe, ctx, {
+        modules: options.modules,
+        withoutDemo: options.withoutDemo,
+        build: options.build,
+      });
+      yield* lifecycle.runPostInitHooks(recipe, ctx);
+      if (path === "full-then-snapshot") {
+        yield* lifecycle.snapshotTemplate(recipe, ctx);
+        yield* store.setTemplate(ctx.composeProjectName, {
+          databaseName: templateDbName(ctx.databaseName),
+          key: expectedKey,
+        });
+        yield* say(`Template snapshot saved: ${templateDbName(ctx.databaseName)}`);
+      } else if (!recipe.database.template) {
+        yield* store.setTemplate(ctx.composeProjectName, null);
+      }
+      return path;
+    }),
+  );
 
 export const resetDbCommand = Command.make(
   "reset-db",

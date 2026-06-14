@@ -1,6 +1,6 @@
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { Effect, Layer } from "effect";
 import {
@@ -16,6 +16,7 @@ import { DockerComposeLive } from "../../src/platform/docker-compose.js";
 import { StateStore } from "../../src/platform/state-store.js";
 import { StateError } from "../../src/errors/errors.js";
 import { buildWorktreeContext } from "../../src/core/worktree-context.js";
+import { computeTemplateKey } from "../../src/core/environment.js";
 import type { EnvironmentRow } from "../../src/core/environment.js";
 import type { ExecSpec, ExecResult } from "../../src/platform/command-runner.js";
 import type { StateStoreApi } from "../../src/platform/state-store.js";
@@ -101,6 +102,37 @@ const byName = (checks: ReadonlyArray<DoctorCheck>, name: string): DoctorCheck =
   return check;
 };
 
+const rowForCurrentFixture = (
+  rootDir: string,
+  overrides: Partial<EnvironmentRow> = {},
+): EnvironmentRow => {
+  const ctx = runSyncSuccess(
+    buildWorktreeContext({
+      rootDir,
+      recipe,
+      env: process.env,
+      git: { _tag: "Branch", branch: "main" },
+    }),
+  );
+  return {
+    composeProject: ctx.composeProjectName,
+    projectId: "fixture",
+    databaseName: ctx.databaseName,
+    rootDir,
+    worktreeName: ctx.worktreeName,
+    branch: ctx.branch,
+    odooHttpPort: ctx.odooHttpPort,
+    shared: false,
+    createdAt: "2026-06-01T00:00:00.000Z",
+    lastUsedAt: new Date().toISOString(),
+    templateDb: null,
+    templateKey: null,
+    imageKey: null,
+    imageBuiltAt: null,
+    ...overrides,
+  };
+};
+
 /** The port doctor derives for the fixture config on branch main. */
 const fixturePort = (): number =>
   runSyncSuccess(
@@ -177,6 +209,8 @@ describe("collectDoctorChecks", () => {
     expect(byName(checks, "port-collisions")).toMatchObject({ ok: true, hard: false });
     expect(byName(checks, "image-inputs")).toMatchObject({ ok: true, hard: false });
     expect(byName(checks, "image-fresh")).toMatchObject({ ok: true, hard: false });
+    expect(byName(checks, "template-snapshot")).toMatchObject({ ok: false, hard: false });
+    expect(byName(checks, "template-snapshot").detail).toContain("no state row");
     expect(byName(checks, "wsl")).toMatchObject({ ok: true, hard: false });
     expect(byName(checks, "prune-candidates")).toMatchObject({ ok: true, hard: false });
     expect(hasHardFailure(checks)).toBe(!nodeVersionOk(process.versions.node));
@@ -287,6 +321,56 @@ describe("collectDoctorChecks", () => {
     expect(byName(checks, "image-fresh")).toMatchObject({ ok: false, hard: false });
     expect(byName(checks, "image-fresh").detail).toContain("no state row");
     expect(hasHardFailure(checks)).toBe(!nodeVersionOk(process.versions.node));
+  });
+
+  it("reports template snapshot freshness from state metadata", async () => {
+    const configPath = writeConfig();
+    const rootDir = dirname(configPath);
+    const fresh = makeEnv({
+      rows: [
+        rowForCurrentFixture(rootDir, {
+          templateDb: "fx_main__tpl",
+          templateKey: computeTemplateKey(recipe),
+        }),
+      ],
+    });
+    const freshChecks = await fresh.run(collectDoctorChecks(configPath));
+    expect(byName(freshChecks, "template-snapshot")).toMatchObject({ ok: true, hard: false });
+    expect(byName(freshChecks, "template-snapshot").detail).toContain("fx_main__tpl");
+
+    const stale = makeEnv({
+      rows: [
+        rowForCurrentFixture(rootDir, {
+          templateDb: "fx_main__tpl",
+          templateKey: "deadbeef",
+        }),
+      ],
+    });
+    const staleChecks = await stale.run(collectDoctorChecks(configPath));
+    expect(byName(staleChecks, "template-snapshot")).toMatchObject({ ok: false, hard: false });
+    expect(byName(staleChecks, "template-snapshot").detail).toContain("stale recorded key");
+  });
+
+  it("--deep reports whether the recorded template database exists", async () => {
+    const configPath = writeConfig();
+    const rootDir = dirname(configPath);
+    const { run } = makeEnv({
+      rows: [
+        rowForCurrentFixture(rootDir, {
+          templateDb: "fx_main__tpl",
+          templateKey: computeTemplateKey(recipe),
+        }),
+      ],
+      script: (spec) =>
+        spec.command === "docker" &&
+        spec.args.includes("-tAc") &&
+        spec.args.some((arg) => arg.includes("fx_main__tpl"))
+          ? ok("1\n")
+          : undefined,
+    });
+    const checks = await run(collectDoctorChecks(configPath, { deep: true }));
+    expect(byName(checks, "template-db-exists")).toMatchObject({ ok: true, hard: false });
+    expect(byName(checks, "template-db-exists").detail).toContain("fx_main__tpl exists");
   });
 
   it("--deep probes browser test dependencies inside the configured Odoo image", async () => {

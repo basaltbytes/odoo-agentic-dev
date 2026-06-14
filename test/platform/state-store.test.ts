@@ -1,9 +1,15 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { Cause, Effect, Exit, Option } from "effect";
-import { StateStore, StateStoreLive } from "../../src/platform/state-store.js";
+import {
+  describeStateDbTarget,
+  resolveStateDbPath,
+  StateStore,
+  StateStoreLive,
+  withStateDbRoot,
+} from "../../src/platform/state-store.js";
 import type { EnvironmentUpsert, StateStoreApi } from "../../src/platform/state-store.js";
 import { StateError } from "../../src/errors/errors.js";
 import { makeFakeStateStore } from "../../src/testing/fake-adapters.js";
@@ -214,6 +220,47 @@ describe("StateStoreLive (real temp sqlite files)", () => {
 
   sharedContract(() => live);
 
+  it("defaults to a shared state DB when that location is writable", () => {
+    const root = mkdtempSync(join(tmpdir(), "oad-state-root-"));
+    tempDirs.push(root);
+    const dataHome = join(root, "xdg");
+    expect(resolveStateDbPath({ XDG_DATA_HOME: dataHome }, { cwd: root })).toBe(
+      join(dataHome, "odoo-agentic-dev", "state.db"),
+    );
+  });
+
+  it("falls back to config-local state when the shared DB location is not usable", () => {
+    const root = mkdtempSync(join(tmpdir(), "oad-state-fallback-"));
+    tempDirs.push(root);
+    mkdirSync(join(root, "sub", "dir"), { recursive: true });
+    writeFileSync(join(root, "odoo-agentic-dev.config.mjs"), "export default {}\n");
+    const notDirectory = join(root, "not-a-dir");
+    writeFileSync(notDirectory, "x");
+    expect(
+      resolveStateDbPath({ XDG_DATA_HOME: notDirectory }, { cwd: join(root, "sub", "dir") }),
+    ).toBe(join(root, ".odoo-agentic-dev", "state.db"));
+  });
+
+  it("keeps ODOO_AGENTIC_DEV_STATE_DB authoritative over scoped worktree roots", async () => {
+    const root = mkdtempSync(join(tmpdir(), "oad-state-scoped-"));
+    tempDirs.push(root);
+    await live(
+      withStateDbRoot(
+        root,
+        Effect.gen(function* () {
+          yield* (yield* StateStore).upsert(env());
+        }),
+      ),
+    );
+    expect(existsSync(join(root, ".odoo-agentic-dev", "state.db"))).toBe(false);
+    const row = await live(
+      Effect.gen(function* () {
+        return yield* (yield* StateStore).get("kl_kl_feature_x");
+      }),
+    );
+    expect(row?.databaseName).toBe("kl_feature_x");
+  });
+
   it("schema creation is idempotent: sequential layers over one file share data", async () => {
     await live(
       Effect.gen(function* () {
@@ -244,8 +291,19 @@ describe("StateStoreLive (real temp sqlite files)", () => {
     if (Exit.isFailure(exit)) {
       const error = Cause.findErrorOption(exit.cause);
       expect(Option.isSome(error)).toBe(true);
-      if (Option.isSome(error)) expect(error.value).toBeInstanceOf(StateError);
+      if (Option.isSome(error)) {
+        expect(error.value).toBeInstanceOf(StateError);
+        expect(error.value.path).toBe(process.env["ODOO_AGENTIC_DEV_STATE_DB"]);
+      }
     }
+  });
+
+  it("describes the state DB target for doctor/error output", () => {
+    const target = describeStateDbTarget(process.env["ODOO_AGENTIC_DEV_STATE_DB"]!);
+    expect(target.path).toBe(process.env["ODOO_AGENTIC_DEV_STATE_DB"]);
+    expect(target.parentExists).toBe(true);
+    expect(target.parentWritable).toBe(true);
+    expect(target.override).toBe(true);
   });
 });
 

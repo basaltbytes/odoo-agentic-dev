@@ -10,6 +10,7 @@ import { rowFromContext } from "../../src/commands/state-hooks.js";
 import { OdooLifecycle } from "../../src/platform/odoo-lifecycle.js";
 import type { OdooLifecycleApi } from "../../src/platform/odoo-lifecycle.js";
 import { computeTemplateKey, templateDbName } from "../../src/core/environment.js";
+import { isTemplateInputFile } from "../../src/core/image-fingerprint.js";
 import { makeFakeStateStore } from "../../src/testing/fake-adapters.js";
 import { makeCtx, makeRecipe, runWith } from "../helpers.js";
 
@@ -226,5 +227,44 @@ describe("computeTemplateKeyForContext", () => {
     const third = await Effect.runPromise(computeTemplateKeyForContext(renamedRecipe, renamedCtx));
     expect(second).not.toBe(first);
     expect(third).not.toBe(second);
+  });
+
+  it("classifies database-shaping addon files for template invalidation", () => {
+    expect(isTemplateInputFile("sale/__manifest__.py")).toBe(true);
+    expect(isTemplateInputFile("sale/security/ir.model.access.csv")).toBe(true);
+    expect(isTemplateInputFile("sale/views/order_views.xml")).toBe(true);
+    expect(isTemplateInputFile("sale/data/actions.xml")).toBe(true);
+    expect(isTemplateInputFile("sale/demo/orders.xml")).toBe(true);
+    expect(isTemplateInputFile("sale/i18n/fr.po")).toBe(true);
+    expect(isTemplateInputFile("sale/tests/tour.yaml")).toBe(true);
+    expect(isTemplateInputFile("sale/models/order.py")).toBe(false);
+    expect(isTemplateInputFile("sale/static/src/app.js")).toBe(false);
+  });
+
+  it("changes when mounted addon XML/demo/i18n/security/manifest files change", async () => {
+    const rootDir = mkdtempSync(join(tmpdir(), "oad-template-addons-key-"));
+    tmp.push(rootDir);
+    mkdirSync(join(rootDir, "addons", "sale", "views"), { recursive: true });
+    mkdirSync(join(rootDir, "addons", "sale", "models"), { recursive: true });
+    writeFileSync(join(rootDir, "addons", "sale", "__manifest__.py"), "{'name': 'Sale'}\n");
+    writeFileSync(join(rootDir, "addons", "sale", "views", "order.xml"), "<odoo />\n");
+    const recipe = makeRecipe({
+      project: { id: "kl", dbPrefix: "kl" },
+      odoo: {
+        version: "18.0",
+        addons: [{ host: "addons", container: "/mnt/c" }],
+      },
+    });
+    const ctx = makeCtx(recipe, "feature/z", rootDir);
+    const first = await Effect.runPromise(computeTemplateKeyForContext(recipe, ctx));
+    writeFileSync(
+      join(rootDir, "addons", "sale", "views", "order.xml"),
+      "<odoo><record /></odoo>\n",
+    );
+    const second = await Effect.runPromise(computeTemplateKeyForContext(recipe, ctx));
+    writeFileSync(join(rootDir, "addons", "sale", "models", "order.py"), "print('ignored')\n");
+    const third = await Effect.runPromise(computeTemplateKeyForContext(recipe, ctx));
+    expect(second).not.toBe(first);
+    expect(third).toBe(second);
   });
 });

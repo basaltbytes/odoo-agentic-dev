@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { lstatSync, readFileSync, readlinkSync, readdirSync } from "node:fs";
+import { existsSync, lstatSync, readFileSync, readlinkSync, readdirSync } from "node:fs";
 import { isAbsolute, relative, resolve as resolvePath } from "node:path";
 import { Effect } from "effect";
 import { ConfigLoadError } from "../errors/errors.js";
@@ -34,6 +34,65 @@ const updatePathFingerprint = (
     hash.update(`other:${name}:${stat.mode}:${stat.size}\0`);
   };
   visit(absolute);
+};
+
+const extension = (name: string): string => {
+  const dot = name.lastIndexOf(".");
+  return dot === -1 ? "" : name.slice(dot).toLowerCase();
+};
+
+export const isTemplateInputFile = (relativePath: string): boolean => {
+  const parts = relativePath
+    .split(/[\\/]+/)
+    .map((part) => part.toLowerCase())
+    .filter((part) => part.length > 0 && part !== ".");
+  const basename = parts.at(-1);
+  if (basename === undefined) return false;
+  if (basename === "__manifest__.py" || basename === "__openerp__.py") return true;
+
+  const ext = extension(basename);
+  const dirs = new Set(parts.slice(0, -1));
+  if (dirs.has("security")) return ext === ".xml" || ext === ".csv";
+  if (dirs.has("views")) return ext === ".xml";
+  if (dirs.has("data") || dirs.has("demo")) return ext === ".xml" || ext === ".csv";
+  if (dirs.has("i18n")) return ext === ".po" || ext === ".pot" || ext === ".csv";
+  if (dirs.has("tests")) {
+    return ext === ".xml" || ext === ".yml" || ext === ".yaml" || ext === ".json" || ext === ".csv";
+  }
+  return false;
+};
+
+const updateFilteredPathFingerprint = (
+  hash: ReturnType<typeof createHash>,
+  rootDir: string,
+  sourcePath: string,
+  include: (relativeToSource: string) => boolean,
+): boolean => {
+  const absolute = isAbsolute(sourcePath) ? sourcePath : resolvePath(rootDir, sourcePath);
+  if (!existsSync(absolute)) return false;
+  let matched = false;
+  const visit = (path: string) => {
+    const stat = lstatSync(path);
+    if (stat.isDirectory()) {
+      for (const entry of readdirSync(path).sort()) visit(resolvePath(path, entry));
+      return;
+    }
+    if (!stat.isFile() && !stat.isSymbolicLink()) return;
+
+    const relativeToSource = relative(absolute, path) || ".";
+    if (!include(relativeToSource)) return;
+    matched = true;
+    const name = relative(rootDir, path) || ".";
+    if (stat.isSymbolicLink()) {
+      hash.update(`symlink:${name}:${readlinkSync(path)}\0`);
+      return;
+    }
+    hash.update(`file:${name}\0`);
+    hash.update(readFileSync(path));
+    hash.update("\0");
+  };
+  visit(absolute);
+  return matched;
 };
 
 const computeImageKeySync = (recipe: OdooAgenticDevConfig, ctx: WorktreeContext): string | null => {
@@ -107,6 +166,18 @@ export const computeTemplateInputHashForContext = (
         hasContentInputs = true;
         hash.update(`configFile:${recipe.odoo.configFile}\0`);
         updatePathFingerprint(hash, ctx.rootDir, recipe.odoo.configFile);
+      }
+      for (const addon of recipe.odoo.addons) {
+        const matched = updateFilteredPathFingerprint(
+          hash,
+          ctx.rootDir,
+          addon.host,
+          isTemplateInputFile,
+        );
+        if (matched) {
+          hasContentInputs = true;
+          hash.update(`addons:${addon.host}:${addon.container}\0`);
+        }
       }
       return hasContentInputs ? hash.digest("hex") : null;
     },

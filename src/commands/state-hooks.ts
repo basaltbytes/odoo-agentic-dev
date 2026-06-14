@@ -9,6 +9,7 @@ import type { ClassifiedEnvironment } from "../core/environment.js";
 import { computeImageKeyForContext } from "../core/image-fingerprint.js";
 import { StateStore } from "../platform/state-store.js";
 import type { EnvironmentUpsert, StateStoreApi } from "../platform/state-store.js";
+import { withStateDbRoot } from "../platform/state-store.js";
 import { PortProbe } from "../platform/port-probe.js";
 import type { PortProbeApi } from "../platform/port-probe.js";
 import { DockerCompose } from "../platform/docker-compose.js";
@@ -40,10 +41,13 @@ export const recordEnvironment = (
   recipe: OdooAgenticDevConfig,
   ctx: WorktreeContext,
 ): Effect.Effect<void, StateError, StateStoreApi> =>
-  Effect.gen(function* () {
-    const store = yield* StateStore;
-    yield* store.upsert(rowFromContext(recipe, ctx));
-  });
+  withStateDbRoot(
+    ctx.rootDir,
+    Effect.gen(function* () {
+      const store = yield* StateStore;
+      yield* store.upsert(rowFromContext(recipe, ctx));
+    }),
+  );
 
 export type ImageFreshness = {
   readonly managed: boolean;
@@ -58,63 +62,69 @@ export const checkImageFreshness = (
   recipe: OdooAgenticDevConfig,
   ctx: WorktreeContext,
 ): Effect.Effect<ImageFreshness, StateError | ConfigLoadError, StateStoreApi> =>
-  Effect.gen(function* () {
-    const expectedImageKey = yield* computeImageKeyForContext(recipe, ctx);
-    if (expectedImageKey === null) {
+  withStateDbRoot(
+    ctx.rootDir,
+    Effect.gen(function* () {
+      const expectedImageKey = yield* computeImageKeyForContext(recipe, ctx);
+      if (expectedImageKey === null) {
+        return {
+          managed: false,
+          fresh: null,
+          expectedImageKey: null,
+          recordedImageKey: null,
+          imageBuiltAt: null,
+          error: null,
+        };
+      }
+      const store = yield* StateStore;
+      const row = yield* store.get(ctx.composeProjectName);
+      const recordedImageKey = row?.imageKey ?? null;
       return {
-        managed: false,
-        fresh: null,
-        expectedImageKey: null,
-        recordedImageKey: null,
-        imageBuiltAt: null,
+        managed: true,
+        fresh: recordedImageKey === expectedImageKey,
+        expectedImageKey,
+        recordedImageKey,
+        imageBuiltAt: row?.imageBuiltAt ?? null,
         error: null,
       };
-    }
-    const store = yield* StateStore;
-    const row = yield* store.get(ctx.composeProjectName);
-    const recordedImageKey = row?.imageKey ?? null;
-    return {
-      managed: true,
-      fresh: recordedImageKey === expectedImageKey,
-      expectedImageKey,
-      recordedImageKey,
-      imageBuiltAt: row?.imageBuiltAt ?? null,
-      error: null,
-    };
-  });
+    }),
+  );
 
 export const recordImageBuild = (
   recipe: OdooAgenticDevConfig,
   ctx: WorktreeContext,
 ): Effect.Effect<ImageFreshness, StateError | ConfigLoadError, StateStoreApi> =>
-  Effect.gen(function* () {
-    const store = yield* StateStore;
-    const expectedImageKey = yield* computeImageKeyForContext(recipe, ctx);
-    if (expectedImageKey === null) {
-      yield* store.setImageBuild(ctx.composeProjectName, null);
+  withStateDbRoot(
+    ctx.rootDir,
+    Effect.gen(function* () {
+      const store = yield* StateStore;
+      const expectedImageKey = yield* computeImageKeyForContext(recipe, ctx);
+      if (expectedImageKey === null) {
+        yield* store.setImageBuild(ctx.composeProjectName, null);
+        return {
+          managed: false,
+          fresh: null,
+          expectedImageKey: null,
+          recordedImageKey: null,
+          imageBuiltAt: null,
+          error: null,
+        };
+      }
+      const imageBuiltAt = new Date().toISOString();
+      yield* store.setImageBuild(ctx.composeProjectName, {
+        key: expectedImageKey,
+        builtAt: imageBuiltAt,
+      });
       return {
-        managed: false,
-        fresh: null,
-        expectedImageKey: null,
-        recordedImageKey: null,
-        imageBuiltAt: null,
+        managed: true,
+        fresh: true,
+        expectedImageKey,
+        recordedImageKey: expectedImageKey,
+        imageBuiltAt,
         error: null,
       };
-    }
-    const imageBuiltAt = new Date().toISOString();
-    yield* store.setImageBuild(ctx.composeProjectName, {
-      key: expectedImageKey,
-      builtAt: imageBuiltAt,
-    });
-    return {
-      managed: true,
-      fresh: true,
-      expectedImageKey,
-      recordedImageKey: expectedImageKey,
-      imageBuiltAt,
-      error: null,
-    };
-  });
+    }),
+  );
 
 const unknownImageFreshness = (error: ConfigLoadError): ImageFreshness => ({
   managed: true,
@@ -191,23 +201,26 @@ export const ensurePortAvailable = (
   PortConflictError | ComposeCommandError | StateError,
   PortProbeApi | DockerComposeApi | StateStoreApi
 > =>
-  Effect.gen(function* () {
-    const probe = yield* PortProbe;
-    if (yield* probe.isFree(ctx.odooHttpPort)) return;
-    const compose = yield* DockerCompose;
-    const projects = yield* compose.listProjects();
-    const ours = projects.find((p) => p.name === ctx.composeProjectName);
-    if (ours !== undefined && ours.running) return;
-    const store = yield* StateStore;
-    const rows = yield* store.list({});
-    const holder = rows.find(
-      (row) =>
-        row.odooHttpPort === ctx.odooHttpPort && row.composeProject !== ctx.composeProjectName,
-    );
-    return yield* Effect.fail(
-      new PortConflictError({ port: ctx.odooHttpPort, holder: holder?.composeProject ?? null }),
-    );
-  });
+  withStateDbRoot(
+    ctx.rootDir,
+    Effect.gen(function* () {
+      const probe = yield* PortProbe;
+      if (yield* probe.isFree(ctx.odooHttpPort)) return;
+      const compose = yield* DockerCompose;
+      const projects = yield* compose.listProjects();
+      const ours = projects.find((p) => p.name === ctx.composeProjectName);
+      if (ours !== undefined && ours.running) return;
+      const store = yield* StateStore;
+      const rows = yield* store.list({});
+      const holder = rows.find(
+        (row) =>
+          row.odooHttpPort === ctx.odooHttpPort && row.composeProject !== ctx.composeProjectName,
+      );
+      return yield* Effect.fail(
+        new PortConflictError({ port: ctx.odooHttpPort, holder: holder?.composeProject ?? null }),
+      );
+    }),
+  );
 
 /**
  * End-of-command cleanup hook for `up`/`setup`. Classifies this project's
@@ -225,41 +238,44 @@ export const warnOrAutoClean = (
   StateError | ComposeCommandError,
   StateStoreApi | DockerComposeApi | GitApi
 > =>
-  Effect.gen(function* () {
-    if (recipe.cleanup.auto) {
-      const report = yield* runPrune({
-        olderThanDays: recipe.cleanup.maxAgeDays,
-        yes: true,
-        allowShared: false,
-        projectId: recipe.project.id,
-        excludeComposeProject: ctx.composeProjectName,
-      });
-      for (const removal of report.removed) {
-        yield* say(`auto-clean: removed ${removal.composeProject} (${removal.reason})`);
+  withStateDbRoot(
+    ctx.rootDir,
+    Effect.gen(function* () {
+      if (recipe.cleanup.auto) {
+        const report = yield* runPrune({
+          olderThanDays: recipe.cleanup.maxAgeDays,
+          yes: true,
+          allowShared: false,
+          projectId: recipe.project.id,
+          excludeComposeProject: ctx.composeProjectName,
+        });
+        for (const removal of report.removed) {
+          yield* say(`auto-clean: removed ${removal.composeProject} (${removal.reason})`);
+        }
+        return report.candidates;
       }
-      return report.candidates;
-    }
 
-    const store = yield* StateStore;
-    const compose = yield* DockerCompose;
-    const rows = yield* store.list({ projectId: recipe.project.id });
-    const dockerProjects = yield* compose.listProjects();
-    const probes = yield* buildProbes(rows);
-    const classified = classifyEnvironments({
-      rows,
-      dockerProjects,
-      probes,
-      olderThanDays: recipe.cleanup.maxAgeDays,
-      allowShared: false,
-      now: new Date().toISOString(),
-    });
-    const candidates = classified.filter(
-      (c) =>
-        c.reason !== "keep" &&
-        c.reason !== "shared-skipped" &&
-        c.row.composeProject !== ctx.composeProjectName,
-    );
-    if (candidates.length === 0) return candidates;
-    yield* say(`${candidates.length} stale environment(s) — run \`odoo-agentic-dev prune\``);
-    return candidates;
-  });
+      const store = yield* StateStore;
+      const compose = yield* DockerCompose;
+      const rows = yield* store.list({ projectId: recipe.project.id });
+      const dockerProjects = yield* compose.listProjects();
+      const probes = yield* buildProbes(rows);
+      const classified = classifyEnvironments({
+        rows,
+        dockerProjects,
+        probes,
+        olderThanDays: recipe.cleanup.maxAgeDays,
+        allowShared: false,
+        now: new Date().toISOString(),
+      });
+      const candidates = classified.filter(
+        (c) =>
+          c.reason !== "keep" &&
+          c.reason !== "shared-skipped" &&
+          c.row.composeProject !== ctx.composeProjectName,
+      );
+      if (candidates.length === 0) return candidates;
+      yield* say(`${candidates.length} stale environment(s) — run \`odoo-agentic-dev prune\``);
+      return candidates;
+    }),
+  );

@@ -16,8 +16,9 @@ import { Git } from "../platform/git.js";
 import type { GitApi } from "../platform/git.js";
 import { StateStore } from "../platform/state-store.js";
 import type { StateStoreApi } from "../platform/state-store.js";
+import { withStateDbRoot } from "../platform/state-store.js";
 import { relativeAge } from "./list.js";
-import { resolveProjectId } from "./resolve-context.js";
+import { resolveProjectScope } from "./resolve-context.js";
 
 /**
  * Filesystem/git facts per registry row. A probe failure (root dir exists but
@@ -185,13 +186,23 @@ export const pruneCommand = Command.make(
           }),
         );
       }
-      const projectId = yield* resolveProjectId(flags.config, flags.allProjects);
-      const report = yield* runPrune({
-        olderThanDays,
-        yes: flags.yes,
-        allowShared: flags.allowShared,
-        projectId,
-      });
+      const scope = yield* resolveProjectScope(flags.config, flags.allProjects);
+      const report = yield* scope.rootDir === undefined
+        ? runPrune({
+            olderThanDays,
+            yes: flags.yes,
+            allowShared: flags.allowShared,
+            projectId: scope.projectId,
+          })
+        : withStateDbRoot(
+            scope.rootDir,
+            runPrune({
+              olderThanDays,
+              yes: flags.yes,
+              allowShared: flags.allowShared,
+              projectId: scope.projectId,
+            }),
+          );
       yield* reportPrune(report, { yes: flags.yes, json: flags.json });
     }),
 ).pipe(Command.withDescription("remove environments whose branches are gone (dry-run by default)"));

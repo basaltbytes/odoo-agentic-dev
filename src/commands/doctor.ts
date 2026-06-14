@@ -2,7 +2,9 @@ import { readFileSync } from "node:fs";
 import { Console, Effect, Option } from "effect";
 import { Command, Flag } from "effect/unstable/cli";
 import { loadRecipe } from "../config/load-recipe.js";
-import { classifyEnvironments } from "../core/environment.js";
+import { classifyEnvironments, computeTemplateKey } from "../core/environment.js";
+import { databaseExistsArgs } from "../core/command-plan.js";
+import { computeTemplateInputHashForContext } from "../core/image-fingerprint.js";
 import { computeImageKeyForContext } from "../core/image-fingerprint.js";
 import { buildWorktreeContext } from "../core/worktree-context.js";
 import type { WorktreeContext } from "../core/worktree-context.js";
@@ -15,7 +17,12 @@ import { Git } from "../platform/git.js";
 import type { GitApi } from "../platform/git.js";
 import { PortProbe } from "../platform/port-probe.js";
 import type { PortProbeApi } from "../platform/port-probe.js";
-import { resolveStateDbPath, StateStore } from "../platform/state-store.js";
+import {
+  describeStateDbTarget,
+  resolveStateDbPath,
+  StateStore,
+  withStateDbRoot,
+} from "../platform/state-store.js";
 import type { StateStoreApi } from "../platform/state-store.js";
 import { buildProbes } from "./prune.js";
 
@@ -93,6 +100,21 @@ export const formatDoctorReport = (checks: ReadonlyArray<DoctorCheck>): string =
         }`,
     )
     .join("\n");
+
+const formatStateDbDetail = (rowCount: number, rootDir: string | null): string => {
+  const target = describeStateDbTarget(
+    resolveStateDbPath(process.env, { rootDir: rootDir ?? undefined }),
+  );
+  const sourceLabel =
+    target.source === "env-override"
+      ? "env override"
+      : target.source === "shared-default"
+        ? "shared default"
+        : "worktree-local fallback";
+  return `${target.path} (${rowCount} environment(s); parent ${
+    target.parentExists ? "exists" : "missing"
+  }, ${target.parentWritable ? "writable" : "not writable"}, ${sourceLabel})`;
+};
 
 /**
  * Run every doctor probe and fold each outcome — success or failure — into a
@@ -195,7 +217,9 @@ export const collectDoctorChecks = (
       if (derived.ok) ctx = derived.ctx;
     }
 
-    const rowsResult = yield* store.list({}).pipe(
+    const rowsResult = yield* (
+      config.ok ? withStateDbRoot(config.rootDir, store.list({})) : store.list({})
+    ).pipe(
       Effect.map((rows) => ({ ok: true as const, rows })),
       Effect.catch((error) => Effect.succeed({ ok: false as const, message: error.message })),
     );
@@ -242,12 +266,13 @@ export const collectDoctorChecks = (
       ok: rowsResult.ok,
       hard: true,
       detail: rowsResult.ok
-        ? `${resolveStateDbPath()} (${rowsResult.rows.length} environment(s))`
+        ? formatStateDbDetail(rowsResult.rows.length, config.ok ? config.rootDir : null)
         : rowsResult.message,
     });
 
     if (config.ok && ctx !== null) {
       const currentCtx = ctx;
+      const row = rows?.find((r) => r.composeProject === currentCtx.composeProjectName);
       const image = yield* computeImageKeyForContext(config.recipe, currentCtx).pipe(
         Effect.map((key) => ({ ok: true as const, key })),
         Effect.catch((error) => Effect.succeed({ ok: false as const, message: error.message })),
@@ -264,7 +289,6 @@ export const collectDoctorChecks = (
       });
 
       if (image.ok) {
-        const row = rows?.find((r) => r.composeProject === currentCtx.composeProjectName);
         const fresh = image.key === null || row?.imageKey === image.key;
         checks.push({
           name: "image-fresh",
@@ -280,6 +304,97 @@ export const collectDoctorChecks = (
                   : fresh
                     ? `last built ${row.imageBuiltAt ?? "(unknown time)"}`
                     : "image inputs changed since the last successful build",
+        });
+      }
+
+      const template = yield* computeTemplateInputHashForContext(config.recipe, currentCtx).pipe(
+        Effect.map((inputHash) => ({
+          ok: true as const,
+          key: computeTemplateKey(config.recipe, inputHash),
+        })),
+        Effect.catch((error) => Effect.succeed({ ok: false as const, message: error.message })),
+      );
+      if (!template.ok) {
+        checks.push({
+          name: "template-snapshot",
+          ok: false,
+          hard: false,
+          detail: template.message,
+        });
+      } else if (!config.recipe.database.template) {
+        checks.push({
+          name: "template-snapshot",
+          ok: true,
+          hard: false,
+          detail: "disabled by database.template: false",
+        });
+      } else if (row === undefined) {
+        checks.push({
+          name: "template-snapshot",
+          ok: false,
+          hard: false,
+          detail: `no state row for this worktree yet; expected key ${template.key}`,
+        });
+      } else if (row.templateDb === null || row.templateKey === null) {
+        checks.push({
+          name: "template-snapshot",
+          ok: false,
+          hard: false,
+          detail: `no template recorded for this worktree; expected key ${template.key}`,
+        });
+      } else {
+        const fresh = row.templateKey === template.key;
+        checks.push({
+          name: "template-snapshot",
+          ok: fresh,
+          hard: false,
+          detail: fresh
+            ? `recorded ${row.templateDb}, key ${row.templateKey}`
+            : `stale recorded key ${row.templateKey}; expected ${template.key} for ${row.templateDb}`,
+        });
+      }
+
+      if (
+        options.deep === true &&
+        config.recipe.database.template &&
+        row?.templateDb !== undefined &&
+        row.templateDb !== null
+      ) {
+        const templateDb = row.templateDb;
+        const exists = yield* compose.prepareComposeFile(config.recipe, currentCtx).pipe(
+          Effect.flatMap((ref) =>
+            compose.stream(ref, ["up", "-d", config.recipe.odoo.databaseServiceName]).pipe(
+              Effect.andThen(
+                compose.waitForDb(ref, config.recipe.odoo.databaseServiceName, {
+                  intervalMillis: 200,
+                  maxAttempts: 15,
+                  stableAttempts: 1,
+                }),
+              ),
+              Effect.andThen(
+                compose.tryRun(
+                  ref,
+                  databaseExistsArgs(config.recipe.odoo.databaseServiceName, templateDb),
+                ),
+              ),
+            ),
+          ),
+          Effect.map((result) => ({
+            ok: result.exitCode === 0 && result.stdout.trim() === "1",
+            detail:
+              result.exitCode === 0 && result.stdout.trim() === "1"
+                ? `${templateDb} exists`
+                : `${templateDb} not found`,
+          })),
+          Effect.catch((error) =>
+            Effect.succeed({ ok: false, detail: tail(String(error)) || String(error) }),
+          ),
+        );
+        checks.push({
+          name: "template-db-exists",
+          ok: exists.ok,
+          hard: false,
+          detail: exists.detail,
         });
       }
 
