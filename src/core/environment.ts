@@ -146,6 +146,7 @@ export type ResetPath = "restore" | "full" | "full-then-snapshot";
  * Pure reset-path decision for `reset-db`/`setup`. Snapshots are only ever
  * planned for names within `TEMPLATE_BASE_NAME_BUDGET` — over-budget names
  * (explicit overrides) degrade every snapshot outcome to a plain `full`.
+ * Recipe-level `database.template: false` disables both restore and snapshot.
  */
 export const decideResetPath = (input: {
   readonly row: EnvironmentRow | undefined;
@@ -154,8 +155,10 @@ export const decideResetPath = (input: {
   readonly noTemplate: boolean;
   readonly refreshTemplate: boolean;
   readonly hasOverrides: boolean;
+  readonly templateEnabled: boolean;
 }): ResetPath => {
   const snapshotFits = input.databaseName.length <= TEMPLATE_BASE_NAME_BUDGET;
+  if (!input.templateEnabled) return "full";
   if (input.hasOverrides) return "full";
   if (input.refreshTemplate) return snapshotFits ? "full-then-snapshot" : "full";
   if (input.noTemplate) return "full";

@@ -82,6 +82,7 @@ export const runResetFlow = (
       noTemplate: options.noTemplate,
       refreshTemplate: options.refreshTemplate,
       hasOverrides: options.modules !== undefined || options.withoutDemo !== undefined,
+      templateEnabled: recipe.database.template,
     });
 
     if (path === "restore") {
@@ -108,6 +109,8 @@ export const runResetFlow = (
         key: expectedKey,
       });
       yield* say(`Template snapshot saved: ${templateDbName(ctx.databaseName)}`);
+    } else if (!recipe.database.template) {
+      yield* store.setTemplate(ctx.composeProjectName, null);
     }
     return path;
   });

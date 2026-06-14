@@ -50,6 +50,7 @@ describe("normalizeConfig", () => {
     expect(cfg.odoo.dev).toBe("xml,reload");
     expect(cfg.odoo.baseAddonsPath).toBe("/usr/lib/python3/dist-packages/odoo/addons");
     expect(cfg.database.withoutDemo).toBe("all");
+    expect(cfg.database.template).toBe(true);
     expect(cfg.database.initialModules).toEqual([]);
     expect(cfg.project.sharedDatabase).toBeNull();
     expect(cfg.project.sharedBranches).toEqual([]);
@@ -95,6 +96,16 @@ describe("normalizeConfig", () => {
       copyFiles: [],
       branchPrefix: "worktree-",
     });
+  });
+
+  it("honors disabling database template caching", () => {
+    const cfg = runSyncSuccess(
+      normalized({
+        ...minimal,
+        database: { initialModules: ["web"], withoutDemo: false, template: false },
+      }),
+    );
+    expect(cfg.database.template).toBe(false);
   });
 
   it("honors explicit worktree settings", () => {

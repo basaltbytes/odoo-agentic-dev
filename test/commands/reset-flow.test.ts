@@ -28,6 +28,15 @@ const recipe = makeRecipe({
 const ctx = makeCtx(recipe, "feature/z");
 const expectedKey = computeTemplateKey(recipe);
 const tplName = templateDbName(ctx.databaseName);
+const recipeWithoutTemplate = makeRecipe({
+  project: { id: "kl", dbPrefix: "kl" },
+  odoo: { version: "18.0", addons: [{ host: "addons", container: "/mnt/c" }] },
+  database: {
+    initialModules: ["KL_setup"],
+    template: false,
+    postInit: [{ type: "odoo-shell-inline", code: "x" }],
+  },
+});
 
 const makeFakeLifecycle = (): {
   readonly calls: Array<string>;
@@ -87,6 +96,15 @@ const runFlow = (
     runResetFlow(recipe, ctx, { ...baseOptions, ...options }),
   );
 
+const runNoTemplateFlow = (
+  store: ReturnType<typeof makeFakeStateStore>,
+  lifecycle: ReturnType<typeof makeFakeLifecycle>,
+  options: Partial<ResetFlowOptions> = {},
+) =>
+  runWith(Layer.merge(store.layer, lifecycle.layer))(
+    runResetFlow(recipeWithoutTemplate, ctx, { ...baseOptions, ...options }),
+  );
+
 describe("runResetFlow", () => {
   it("restores from the template (no hooks, no snapshot) when the key matches", async () => {
     const store = seedRow({ databaseName: tplName, key: expectedKey });
@@ -142,6 +160,17 @@ describe("runResetFlow", () => {
     expect(store.rows.get(ctx.composeProjectName)).toMatchObject({
       templateDb: tplName,
       templateKey: expectedKey,
+    });
+  });
+
+  it("recipe-level template:false runs full init and clears template metadata", async () => {
+    const store = seedRow({ databaseName: tplName, key: expectedKey });
+    const lifecycle = makeFakeLifecycle();
+    await expect(runNoTemplateFlow(store, lifecycle)).resolves.toBe("full");
+    expect(lifecycle.calls).toEqual(["resetDatabase", "runPostInitHooks"]);
+    expect(store.rows.get(ctx.composeProjectName)).toMatchObject({
+      templateDb: null,
+      templateKey: null,
     });
   });
 });

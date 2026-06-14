@@ -332,6 +332,7 @@ export default defineOdooAgenticDevConfig({
   database: {
     initialModules: ["KL_setup", "KL_payment_demo"],
     withoutDemo: "all",
+    template: true,
     postInit: [
       { type: "odoo-shell-file", file: "scripts/odoo-agentic-dev/post-init.py" }
     ]
@@ -636,6 +637,8 @@ Options:
 - `--allow-shared`
 - `--modules <list>`
 - `--without-demo <mode>`
+- `--no-template`
+- `--refresh-template`
 
 Acceptance:
 
@@ -643,6 +646,7 @@ Acceptance:
 - terminates active database sessions before deletion
 - runs configured initial modules
 - runs post-init hooks
+- respects recipe-level `database.template: false` by using full init without restoring or snapshotting `<database>__tpl`
 
 ### `odoo-agentic-dev update <modules>`
 

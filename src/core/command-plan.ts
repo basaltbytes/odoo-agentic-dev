@@ -74,12 +74,29 @@ export const removeFilestoreArgs = (odooService: string, databaseName: string): 
   `rm -rf /var/lib/odoo/filestore/${databaseName}`,
 ];
 
+const parseOdooMajorVersion = (version: string): number | null => {
+  const match = /^(\d+)(?:\D|$)/.exec(version.trim());
+  if (match?.[1] === undefined) return null;
+  const major = Number.parseInt(match[1], 10);
+  return Number.isNaN(major) ? null : major;
+};
+
+export const demoDataArgs = (
+  odooVersion: string,
+  withoutDemo: string | false,
+): ReadonlyArray<string> => {
+  if (withoutDemo !== false) return [`--without-demo=${withoutDemo}`];
+  const major = parseOdooMajorVersion(odooVersion);
+  return major !== null && major >= 19 ? ["--with-demo"] : [];
+};
+
 export const odooInitArgs = (
   odooService: string,
   databaseName: string,
   addonsPath: string,
   modules: ReadonlyArray<string>,
   withoutDemo: string | false,
+  odooVersion = "18.0",
 ): Array<string> => [
   "run",
   "--rm",
@@ -90,7 +107,7 @@ export const odooInitArgs = (
   `--addons-path=${addonsPath}`,
   "-i",
   (modules.length > 0 ? modules : ["base"]).join(","),
-  ...(withoutDemo === false ? [] : [`--without-demo=${withoutDemo}`]),
+  ...demoDataArgs(odooVersion, withoutDemo),
   "--stop-after-init",
 ];
 

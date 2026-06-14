@@ -6,7 +6,7 @@ import {
   decideResetPath,
   templateDbName,
 } from "../../src/core/environment.js";
-import type { EnvironmentRow, PruneReason } from "../../src/core/environment.js";
+import type { EnvironmentRow, PruneReason, ResetPath } from "../../src/core/environment.js";
 import { makeRecipe } from "../helpers.js";
 
 const row = (overrides: Partial<EnvironmentRow> = {}): EnvironmentRow => ({
@@ -248,14 +248,16 @@ describe("classifyEnvironments", () => {
 describe("decideResetPath", () => {
   const KEY = "abcd1234";
   const matching = row({ templateDb: "kl_feature_x__tpl", templateKey: KEY });
-  const decide = (input: {
+  type DecideInput = {
     row?: EnvironmentRow | undefined;
     expectedKey?: string;
     databaseName?: string;
     noTemplate?: boolean;
     refreshTemplate?: boolean;
     hasOverrides?: boolean;
-  }) =>
+    templateEnabled?: boolean;
+  };
+  const decide = (input: DecideInput) =>
     decideResetPath({
       row: input.row,
       expectedKey: input.expectedKey ?? KEY,
@@ -263,11 +265,12 @@ describe("decideResetPath", () => {
       noTemplate: input.noTemplate ?? false,
       refreshTemplate: input.refreshTemplate ?? false,
       hasOverrides: input.hasOverrides ?? false,
+      templateEnabled: input.templateEnabled ?? true,
     });
 
   const longName = "a".repeat(59);
 
-  it.each([
+  const cases: ReadonlyArray<readonly [string, DecideInput, ResetPath]> = [
     [
       "overrides force full even with a matching template",
       { row: matching, hasOverrides: true },
@@ -291,6 +294,11 @@ describe("decideResetPath", () => {
     [
       "noTemplate forces full, keeping the template row",
       { row: matching, noTemplate: true },
+      "full",
+    ],
+    [
+      "disabled template caching forces full even with a matching template",
+      { row: matching, templateEnabled: false },
       "full",
     ],
     ["no state row → full init then snapshot", { row: undefined }, "full-then-snapshot"],
@@ -319,7 +327,9 @@ describe("decideResetPath", () => {
       { row: undefined, databaseName: "a".repeat(58) },
       "full-then-snapshot",
     ],
-  ] as const)("%s", (_label, input, expected) => {
+  ];
+
+  it.each(cases)("%s", (_label, input, expected) => {
     expect(decide(input)).toBe(expected);
   });
 });

@@ -43,7 +43,7 @@ The global `oad` delegates to the project-local install when one is present, so 
 cd your-odoo-project
 oad init        # scaffold odoo-agentic-dev.config.ts (project id from the folder name)
 npm install -D @basaltbytes/odoo-agentic-dev  # pin the version: config types, hooks, delegation target
-oad setup       # deps, image, database, template snapshot
+oad setup       # deps, image, database, optional template snapshot
 oad up          # start Odoo (+ companion apps)
 ```
 
@@ -131,7 +131,10 @@ export default defineConfig({
 
   database: {
     initialModules: ["acme_core"],    // default: [] — installed on first setup / reset-db
-    withoutDemo: "all",               // default — `false` keeps Odoo demo data
+    withoutDemo: "all",               // default — `false` requests Odoo demo data
+                                      //   (Odoo 19+ receives `--with-demo`)
+    template: true,                   // default — set false to always full-init and
+                                      //   skip `<database>__tpl` restore/snapshot caching
     postInit: [                       // default: [] — run after EVERY database init or reset,
                                       //   and folded into the template-snapshot cache key
       { type: "odoo-shell-file", file: "scripts/post-init.py" },
@@ -320,7 +323,7 @@ Delete and recreate the current worktree database and filestore, terminate activ
 | `--json` | suppress decorative output; print one final JSON report line |
 | `--config <path>` | explicit config file path |
 
-Demo data is controlled at database initialization time, not per test run. The recipe's `database.withoutDemo` sets the default: a string mode (for example `"all"`) is passed to Odoo's `--without-demo`, while `withoutDemo: false` omits the flag entirely so Odoo installs demo data. The `--without-demo <mode>` flag overrides the recipe for one reset, passing the mode string straight through to Odoo.
+Demo data is controlled at database initialization time, not per test run. The recipe's `database.withoutDemo` sets the default: a string mode (for example `"all"`) is passed to Odoo's `--without-demo`, while `withoutDemo: false` requests demo data. For Odoo 19 and newer that emits `--with-demo`; for older versions it preserves the legacy behavior of omitting `--without-demo`. The `--without-demo <mode>` flag overrides the recipe for one reset, passing the mode string straight through to Odoo.
 
 #### Template fast reset
 
@@ -328,6 +331,7 @@ The first successful full init (from `setup` or `reset-db`) is snapshotted — a
 
 Snapshots carry a key derived from the database-shaping recipe inputs: `initialModules`, `withoutDemo`, `odoo.version`, `postInit`, the Odoo addons path configuration, `odoo.configFile`, and the declared Odoo image inputs (`odoo.build`, `odoo.dockerfile`, `odoo.imageName`, plus the contents of declared requirements/copy/config files). Changing any of these invalidates the template: the next `reset-db` automatically falls back to a full init and takes a fresh snapshot. One-off `--modules`/`--without-demo` overrides always force a full init without touching the stored template.
 
+- `database.template: false` disables restore and snapshot caching for the recipe. `setup` and `reset-db` run a full init and do not create `<database>__tpl`.
 - `--no-template` forces a full init for one run, keeping the existing snapshot.
 - `--refresh-template` forces a full init and replaces the snapshot.
 - `--build` rebuilds the Odoo image before a reset or restore. Use it after editing `odoo.build`, a hand-written `odoo.dockerfile`, or files copied into the image. Template invalidation chooses the database reset path; it does not by itself rebuild the image.

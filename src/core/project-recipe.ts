@@ -95,8 +95,13 @@ export type OdooRuntimeConfig = {
 
 export type OdooDatabaseConfig = {
   readonly initialModules?: ReadonlyArray<string>;
-  /** Odoo --without-demo value; false disables the flag entirely */
+  /**
+   * Demo data mode. A string is passed to `--without-demo=<value>`;
+   * false requests demo data, using the Odoo-version-appropriate flag.
+   */
   readonly withoutDemo?: string | false;
+  /** enable `<database>__tpl` snapshot/restore caching (default true) */
+  readonly template?: boolean;
   readonly postInit?: ReadonlyArray<PostInitHook>;
 };
 
@@ -180,6 +185,7 @@ export type OdooAgenticDevConfig = {
   readonly database: {
     readonly initialModules: ReadonlyArray<string>;
     readonly withoutDemo: string | false;
+    readonly template: boolean;
     readonly postInit: ReadonlyArray<PostInitHook>;
   };
   readonly setup: {

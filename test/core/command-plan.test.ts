@@ -122,6 +122,34 @@ describe("sql/argv builders", () => {
     ]);
   });
 
+  it("passes --with-demo for Odoo 19 when demo data is explicitly enabled", () => {
+    expect(odooInitArgs("odoo", "kl_x", ADDONS, ["huco_planning"], false, "19.0")).toEqual([
+      "run",
+      "--rm",
+      "odoo",
+      "odoo",
+      "-d",
+      "kl_x",
+      `--addons-path=${ADDONS}`,
+      "-i",
+      "huco_planning",
+      "--with-demo",
+      "--stop-after-init",
+    ]);
+  });
+
+  it("passes --without-demo=all for Odoo 19 when demo data is disabled", () => {
+    const args = odooInitArgs("odoo", "kl_x", ADDONS, ["huco_planning"], "all", "19.0");
+    expect(args).toContain("--without-demo=all");
+    expect(args).not.toContain("--with-demo");
+  });
+
+  it("keeps Odoo 18 demo-enable behavior by omitting both demo flags", () => {
+    const args = odooInitArgs("odoo", "kl_x", ADDONS, ["KL_setup"], false, "18.0");
+    expect(args).not.toContain("--with-demo");
+    expect(args.some((arg) => arg.startsWith("--without-demo"))).toBe(false);
+  });
+
   it("update and shell argv", () => {
     expect(odooUpdateArgs("odoo", "kl_x", ADDONS, ["KL_base", "KL_sale"])).toEqual([
       "run",

@@ -185,6 +185,7 @@ export const OdooLifecycleLive = Layer.effect(
             containerAddonsPath(recipe),
             options.modules ?? recipe.database.initialModules,
             options.withoutDemo ?? recipe.database.withoutDemo,
+            recipe.odoo.version,
           );
           yield* compose.stream(ref, initArgs).pipe(Effect.mapError(toOdooError));
           yield* restartOdooIfNeeded(recipe, ref, restartOdoo);

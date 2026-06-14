@@ -153,7 +153,7 @@ export const testCommand = Command.make(
         }
         if (flags.includeDemo) {
           yield* report.say(
-            "note: --include-demo has no effect in v1; reset the database with --without-demo=false instead",
+            "note: --include-demo has no effect in v1; set database.withoutDemo: false and reset the database instead",
           );
         }
         const options = yield* resolveTestOptions(recipe, {

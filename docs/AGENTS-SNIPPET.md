@@ -16,7 +16,7 @@ same database, same ports, on every machine.
 - `oad info --json` — the resolved context: database, ports, `odooUrl`
   (browser URL), and every env var the tooling derives.
 - `oad setup` — prepare a fresh worktree end to end (deps, Docker image,
-  database init, template snapshot).
+  database init, optional template snapshot).
 - `oad up --detach` / `down` — start/stop the stack (`up` rebuilds by
   default; pass `--no-build` only when the image is known fresh).
 - `oad restart` — fast Odoo process restart when the server hangs; use

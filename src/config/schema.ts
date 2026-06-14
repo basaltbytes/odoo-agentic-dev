@@ -80,6 +80,7 @@ const ConfigInputSchema = Schema.Struct({
     Schema.Struct({
       initialModules: Schema.optional(Schema.Array(Schema.String)),
       withoutDemo: Schema.optional(Schema.Union([Schema.String, Schema.Literal(false)])),
+      template: Schema.optional(Schema.Boolean),
       postInit: Schema.optional(Schema.Array(HookSchema)),
     }),
   ),
@@ -271,6 +272,7 @@ export const normalizeConfig = (
     database: {
       initialModules: input.database?.initialModules ?? [],
       withoutDemo: input.database?.withoutDemo ?? "all",
+      template: input.database?.template ?? true,
       postInit: input.database?.postInit ?? [],
     },
     setup: {
