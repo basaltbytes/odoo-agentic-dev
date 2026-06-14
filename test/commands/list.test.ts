@@ -22,6 +22,8 @@ const makeRow = (overrides: Partial<EnvironmentRow>): EnvironmentRow => ({
   lastUsedAt: "2026-06-11T10:00:00.000Z",
   templateDb: null,
   templateKey: null,
+  imageKey: null,
+  imageBuiltAt: null,
   ...overrides,
 });
 

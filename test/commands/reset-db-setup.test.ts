@@ -127,12 +127,15 @@ describe("runSetup", () => {
         lifecycleCalls.push(name);
       });
     const lifecycle = Layer.succeed(OdooLifecycle, {
+      buildImage: () => record("buildImage"),
       databaseExists: () => record("databaseExists").pipe(Effect.as(true)),
       resetDatabase: () => record("resetDatabase"),
       runPostInitHooks: () => record("runPostInitHooks"),
       updateModules: () => record("updateModules"),
       runTests: () =>
-        record("runTests").pipe(Effect.as({ exitCode: 0, stdoutTail: "", stderrTail: "" })),
+        record("runTests").pipe(
+          Effect.as({ exitCode: 0, stdout: "", stderr: "", stdoutTail: "", stderrTail: "" }),
+        ),
       snapshotTemplate: () => record("snapshotTemplate"),
       restoreFromTemplate: () => record("restoreFromTemplate"),
     });

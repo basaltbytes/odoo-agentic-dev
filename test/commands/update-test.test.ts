@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { detectSkippedBrowserSuite, resolveTestOptions } from "../../src/commands/test.js";
+import {
+  analyzeTestOutput,
+  detectSkippedBrowserSuite,
+  resolveTestOptions,
+} from "../../src/commands/test.js";
 import { UsageError } from "../../src/errors/errors.js";
 import { makeRecipe, runSyncFailure, runSyncSuccess } from "../helpers.js";
 
@@ -10,14 +14,25 @@ const recipe = makeRecipe({
 });
 
 describe("detectSkippedBrowserSuite", () => {
-  it("returns actionable guidance for the websocket-client browser-test skip", () => {
+  it("returns actionable guidance for the websocket-client browser-test skip without requiring the word skipped", () => {
     const message = detectSkippedBrowserSuite({
-      stdoutTail: "",
-      stderrTail: "skipped because websocket-client module is not installed",
+      stdout: "",
+      stderr: "websocket-client module is not installed",
     });
     expect(message).toContain("websocket-client");
-    expect(message).toContain("odoo.build.pipPackages");
+    expect(message).toContain("odoo.build");
     expect(message).toContain("oad test --build");
+  });
+
+  it("fails known Chrome/browser infrastructure skip reasons", () => {
+    for (const stderr of [
+      "Chrome executable not found",
+      "Failed to detect chrome devtools port after 10s",
+      "Error during Chrome connection: never found 'page' target",
+      "Cannot connect to chrome dev tools",
+    ]) {
+      expect(detectSkippedBrowserSuite({ stdout: "", stderr })).toContain("browser tests");
+    }
   });
 
   it("ignores ordinary successful output", () => {
@@ -27,6 +42,32 @@ describe("detectSkippedBrowserSuite", () => {
         stderrTail: "",
       }),
     ).toBeNull();
+  });
+
+  it("treats all-skipped Hoot runs as fatal", () => {
+    const analysis = analyzeTestOutput({
+      stdout: "[HOOT] Passed 0 tests\nskipped: 3",
+      stderr: "",
+    });
+    expect(analysis.fatalReason).toContain("zero passed");
+    expect(analysis.warnings).toEqual([]);
+  });
+
+  it("reports partial Hoot skips as warnings, not fatal failures", () => {
+    const analysis = analyzeTestOutput({
+      stdout: "[HOOT] Passed 10 tests\nskipped: 2",
+      stderr: "",
+    });
+    expect(analysis.fatalReason).toBeNull();
+    expect(analysis.warnings).toEqual(["Odoo reported 2 skipped Hoot/browser test(s)."]);
+  });
+
+  it("ignores unrelated skipped text", () => {
+    const analysis = analyzeTestOutput({
+      stdout: "inventory import skipped optional row\n[HOOT] Passed 10 tests",
+      stderr: "",
+    });
+    expect(analysis).toEqual({ fatalReason: null, warnings: [] });
   });
 });
 

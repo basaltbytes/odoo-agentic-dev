@@ -49,6 +49,8 @@ const makeRow = (overrides: Partial<EnvironmentRow>): EnvironmentRow => ({
   lastUsedAt: new Date().toISOString(),
   templateDb: null,
   templateKey: null,
+  imageKey: null,
+  imageBuiltAt: null,
   ...overrides,
 });
 

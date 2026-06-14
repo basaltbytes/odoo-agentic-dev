@@ -30,7 +30,8 @@ export type JsonErrorReport = {
  * purpose: every value is JSON-serialisable and the per-command set is small
  * (see each command's `setExtra` calls).
  */
-export type JsonReportExtras = Record<string, string | number | boolean | null>;
+export type JsonReportExtraValue = string | number | boolean | null | ReadonlyArray<string>;
+export type JsonReportExtras = Record<string, JsonReportExtraValue>;
 
 /** The fixed core of the object a lifecycle command prints under `--json`. */
 export type JsonReport = {
@@ -68,7 +69,7 @@ export interface CommandReporter {
   /** child exit code; a non-zero code makes the final report not-ok */
   readonly setExitCode: (code: number) => Effect.Effect<void>;
   /** attach a per-command field (mode, templateKey, volumesRemoved, tails…) */
-  readonly setExtra: (key: string, value: string | number | boolean | null) => Effect.Effect<void>;
+  readonly setExtra: (key: string, value: JsonReportExtraValue) => Effect.Effect<void>;
 }
 
 /**

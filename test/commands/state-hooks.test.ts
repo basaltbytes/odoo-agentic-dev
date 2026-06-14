@@ -4,13 +4,19 @@ import { join } from "node:path";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { Effect, Layer } from "effect";
 import {
+  buildImageAndRecord,
   ensurePortAvailable,
+  imageStaleMessage,
   recordEnvironment,
+  recordImageBuild,
+  reportImageFreshness,
   rowFromContext,
+  warnIfImageStale,
   warnOrAutoClean,
 } from "../../src/commands/state-hooks.js";
 import { DockerComposeLive } from "../../src/platform/docker-compose.js";
-import { PortConflictError } from "../../src/errors/errors.js";
+import { PortConflictError, UsageError } from "../../src/errors/errors.js";
+import { OdooLifecycle } from "../../src/platform/odoo-lifecycle.js";
 import type { EnvironmentRow } from "../../src/core/environment.js";
 import {
   makeFakeGit,
@@ -54,6 +60,8 @@ const makeRow = (overrides: Partial<EnvironmentRow>): EnvironmentRow => ({
   lastUsedAt: new Date().toISOString(),
   templateDb: null,
   templateKey: null,
+  imageKey: null,
+  imageBuiltAt: null,
   ...overrides,
 });
 
@@ -114,6 +122,160 @@ describe("recordEnvironment", () => {
       branch: "feature/z",
       odooHttpPort: onFeature.odooHttpPort,
       shared: false,
+    });
+  });
+});
+
+describe("image freshness helpers", () => {
+  const imageRecipe = makeRecipe({
+    project: { id: "kl", dbPrefix: "kl" },
+    odoo: {
+      version: "18.0",
+      build: { pipPackages: ["websocket-client"] },
+      addons: [{ host: "addons", container: "/mnt/c" }],
+    },
+  });
+  const imageCtx = makeCtx(imageRecipe, "feature/z");
+
+  it("records a successful managed image build and reports it fresh", async () => {
+    const { run, store } = makeEnv({});
+    await run(recordEnvironment(imageRecipe, imageCtx));
+    const freshness = await run(recordImageBuild(imageRecipe, imageCtx));
+    const row = store.rows.get(imageCtx.composeProjectName);
+    expect(freshness).toMatchObject({ managed: true, fresh: true });
+    expect(row?.imageKey).toBe(freshness.expectedImageKey);
+    expect(row?.imageBuiltAt).toBe(freshness.imageBuiltAt);
+  });
+
+  it("warns when a managed image has no matching recorded build", async () => {
+    const lines: Array<string> = [];
+    const { run } = makeEnv({});
+    await run(recordEnvironment(imageRecipe, imageCtx));
+    const freshness = await run(
+      warnIfImageStale(imageRecipe, imageCtx, (line) =>
+        Effect.sync(() => {
+          lines.push(line);
+        }),
+      ),
+    );
+    expect(freshness.fresh).toBe(false);
+    expect(imageStaleMessage(freshness)).toContain("restart --rebuild");
+    expect(lines.join("\n")).toContain("Odoo image may be stale");
+  });
+
+  it("treats fingerprint failures as an advisory warning for non-build commands", async () => {
+    const rootDir = existingDir();
+    const missingInputRecipe = makeRecipe({
+      project: { id: "kl", dbPrefix: "kl" },
+      odoo: {
+        version: "18.0",
+        build: { pipRequirements: ["missing-requirements.txt"] },
+        addons: [{ host: "addons", container: "/mnt/c" }],
+      },
+    });
+    const missingInputCtx = makeCtx(missingInputRecipe, "feature/z", rootDir);
+    const lines: Array<string> = [];
+    const { run } = makeEnv({});
+    await run(recordEnvironment(missingInputRecipe, missingInputCtx));
+    const freshness = await run(
+      warnIfImageStale(missingInputRecipe, missingInputCtx, (line) =>
+        Effect.sync(() => {
+          lines.push(line);
+        }),
+      ),
+    );
+    expect(freshness).toMatchObject({
+      managed: true,
+      fresh: null,
+      expectedImageKey: null,
+      recordedImageKey: null,
+      imageBuiltAt: null,
+    });
+    expect(freshness.error).toContain("could not fingerprint Odoo image inputs");
+    expect(lines.join("\n")).toContain("Continuing without freshness check");
+  });
+
+  it("records image metadata immediately after a successful rebuild", async () => {
+    const calls: Array<string> = [];
+    const lifecycle = Layer.succeed(OdooLifecycle, {
+      buildImage: () =>
+        Effect.sync(() => {
+          calls.push("buildImage");
+        }),
+      databaseExists: () => Effect.succeed(true),
+      resetDatabase: () => Effect.void,
+      runPostInitHooks: () => Effect.void,
+      updateModules: () => Effect.void,
+      runTests: () =>
+        Effect.succeed({ exitCode: 0, stdout: "", stderr: "", stdoutTail: "", stderrTail: "" }),
+      snapshotTemplate: () => Effect.void,
+      restoreFromTemplate: () => Effect.void,
+    });
+    const store = makeFakeStateStore();
+    const run = runWith(Layer.merge(store.layer, lifecycle));
+    const extras: Record<string, unknown> = {};
+    const report = {
+      json: true,
+      say: () => Effect.void,
+      action: (name: string) =>
+        Effect.sync(() => {
+          calls.push(`action:${name}`);
+        }),
+      setContext: () => Effect.void,
+      setExitCode: () => Effect.void,
+      setExtra: (key: string, value: unknown) =>
+        Effect.sync(() => {
+          extras[key] = value;
+        }),
+    };
+
+    const laterFailure = new UsageError({ issues: ["later lifecycle failure"] });
+    const failure = await run(
+      Effect.flip(
+        Effect.gen(function* () {
+          yield* recordEnvironment(imageRecipe, imageCtx);
+          yield* buildImageAndRecord(imageRecipe, imageCtx, report);
+          yield* Effect.fail(laterFailure);
+        }),
+      ),
+    );
+
+    expect(failure).toBe(laterFailure);
+    expect(calls).toEqual(["buildImage", "action:rebuild-image"]);
+    expect(store.rows.get(imageCtx.composeProjectName)?.imageKey).toMatch(/^[a-f0-9]{64}$/);
+    expect(extras).toMatchObject({ imageManaged: true, imageFresh: true });
+  });
+
+  it("adds image freshness fields to json reports", async () => {
+    const calls: Record<string, unknown> = {};
+    const report = {
+      json: true,
+      say: () => Effect.void,
+      action: () => Effect.void,
+      setContext: () => Effect.void,
+      setExitCode: () => Effect.void,
+      setExtra: (key: string, value: unknown) =>
+        Effect.sync(() => {
+          calls[key] = value;
+        }),
+    };
+    await Effect.runPromise(
+      reportImageFreshness(report, {
+        managed: true,
+        fresh: false,
+        expectedImageKey: "new",
+        recordedImageKey: "old",
+        imageBuiltAt: null,
+        error: null,
+      }),
+    );
+    expect(calls).toMatchObject({
+      imageManaged: true,
+      imageFresh: false,
+      expectedImageKey: "new",
+      recordedImageKey: "old",
+      imageBuiltAt: null,
+      imageFreshnessError: null,
     });
   });
 });

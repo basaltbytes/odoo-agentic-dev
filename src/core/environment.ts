@@ -24,6 +24,10 @@ export type EnvironmentRow = {
   readonly templateDb: string | null;
   /** hash of (modules, withoutDemo, odoo.version, postInit) */
   readonly templateKey: string | null;
+  /** hash of the last successfully built Odoo image inputs */
+  readonly imageKey: string | null;
+  /** ISO 8601 UTC when imageKey was recorded */
+  readonly imageBuiltAt: string | null;
 };
 
 export const TEMPLATE_SUFFIX = "__tpl";

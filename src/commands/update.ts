@@ -3,7 +3,12 @@ import { Argument, Command, Flag } from "effect/unstable/cli";
 import { UsageError } from "../errors/errors.js";
 import { OdooLifecycle } from "../platform/odoo-lifecycle.js";
 import { resolveContext } from "./resolve-context.js";
-import { recordEnvironment } from "./state-hooks.js";
+import {
+  buildImageAndRecord,
+  recordEnvironment,
+  reportImageFreshness,
+  warnIfImageStale,
+} from "./state-hooks.js";
 import { withJsonReport } from "./json-report.js";
 
 export const updateCommand = Command.make(
@@ -36,11 +41,17 @@ export const updateCommand = Command.make(
         const { ctx, recipe } = yield* resolveContext(flags.config);
         yield* report.setContext(ctx);
         yield* recordEnvironment(recipe, ctx);
+        if (!flags.build) {
+          yield* reportImageFreshness(report, yield* warnIfImageStale(recipe, ctx, report.say));
+        }
         const lifecycle = yield* OdooLifecycle;
+        if (flags.build) {
+          yield* buildImageAndRecord(recipe, ctx, report);
+        }
         yield* report.say(`Updating modules [${list.join(", ")}] in ${ctx.databaseName}`);
         yield* lifecycle.updateModules(recipe, ctx, list, {
           restart: !flags.noRestart,
-          build: flags.build,
+          build: false,
         });
         yield* report.action("update-modules");
       }),

@@ -9,7 +9,14 @@ import type { CompanionSpec } from "../platform/process-supervisor.js";
 import { ProcessSupervisor } from "../platform/process-supervisor.js";
 import { DockerCompose } from "../platform/docker-compose.js";
 import { resolveContext } from "./resolve-context.js";
-import { ensurePortAvailable, recordEnvironment, warnOrAutoClean } from "./state-hooks.js";
+import {
+  ensurePortAvailable,
+  recordEnvironment,
+  recordImageBuild,
+  reportImageFreshness,
+  warnIfImageStale,
+  warnOrAutoClean,
+} from "./state-hooks.js";
 import { withJsonReport } from "./json-report.js";
 import { buildInfoText } from "./info.js";
 
@@ -88,10 +95,16 @@ export const upCommand = Command.make(
         yield* compose.ensureAvailable();
         yield* ensurePortAvailable(ctx);
         yield* recordEnvironment(recipe, ctx);
+        if (flags.noBuild) {
+          yield* reportImageFreshness(report, yield* warnIfImageStale(recipe, ctx, report.say));
+        }
         const ref = yield* compose.prepareComposeFile(recipe, ctx);
         const plan = buildUpPlan(recipe, ctx, flags);
         yield* compose.stream(ref, plan.upArgs);
         yield* report.action("compose-up");
+        if (!flags.noBuild) {
+          yield* reportImageFreshness(report, yield* recordImageBuild(recipe, ctx));
+        }
         // the info block is redundant with the json report's identity fields
         if (!report.json) yield* Console.log(buildInfoText(ctx));
         yield* warnOrAutoClean(recipe, ctx, report.say);

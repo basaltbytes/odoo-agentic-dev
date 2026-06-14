@@ -85,6 +85,8 @@ export const makeFakeStateStore = (
             lastUsedAt: now,
             templateDb: existing?.templateDb ?? null,
             templateKey: existing?.templateKey ?? null,
+            imageKey: existing?.imageKey ?? null,
+            imageBuiltAt: existing?.imageBuiltAt ?? null,
           });
         }),
       touch: (composeProject) =>
@@ -113,6 +115,17 @@ export const makeFakeStateStore = (
               ...existing,
               templateDb: meta?.databaseName ?? null,
               templateKey: meta?.key ?? null,
+            });
+          }
+        }),
+      setImageBuild: (composeProject, meta) =>
+        Effect.sync(() => {
+          const existing = rows.get(composeProject);
+          if (existing !== undefined) {
+            rows.set(composeProject, {
+              ...existing,
+              imageKey: meta?.key ?? null,
+              imageBuiltAt: meta === null ? null : (meta.builtAt ?? new Date().toISOString()),
             });
           }
         }),

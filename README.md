@@ -87,7 +87,7 @@ export default defineConfig({
     databaseServiceName: "db",        // default
     postgresImage: "postgres:16",     // default
     build: {                          // default: none — the CLI GENERATES a Dockerfile from this
-      aptPackages: ["tesseract-ocr"], //   (FROM odoo:<version>, one apt layer, one pip layer, COPYs)
+      aptPackages: ["tesseract-ocr"], //   (FROM odoo:<version>, apt layer, pip layer, then COPYs)
       pipRequirements: ["backend/requirements.txt"],
       pipPackages: ["requests"],
       copy: [{ from: "backend/sql-script", to: "/opt/acme/sql-script" }],
@@ -182,6 +182,24 @@ Database names are derived from the branch: at most **one** leading type segment
 
 They run at different times against different things. `setup` is host-side workspace bootstrap — submodules and dependency installs — executed once when a worktree is prepared, before any database exists. `database.postInit` runs against Odoo after **every** database initialization or reset (and is part of the template cache key, so editing a hook correctly invalidates cached snapshots). Rule of thumb: filesystem state → `setup`; database state → `database.postInit`.
 
+### Docker build context and cache
+
+Generated Odoo images build with the project root as Docker context. Add a project `.dockerignore` so Docker does not rescan or upload irrelevant files on every build:
+
+```dockerignore
+.git
+node_modules
+dist
+coverage
+.venv
+__pycache__
+.pytest_cache
+.odoo-agentic-dev/logs
+*.log
+```
+
+Do not ignore files referenced by `odoo.build.pipRequirements` or `odoo.build.copy`; Docker must see those paths. The generated Dockerfile keeps expensive dependency layers cacheable by installing apt packages first, copying requirements files just before `pip install`, and copying arbitrary project assets after the pip layer.
+
 ## Commands
 
 Every command accepts `--config <path>` to point at an explicit recipe file; otherwise the recipe is discovered from the current working directory upward.
@@ -226,6 +244,8 @@ Prepare a new worktree: initialize Git submodules (if the recipe asks for it), r
 
 Start Odoo (and PostgreSQL) on the derived port, then the configured companion apps with context-derived env injected (`ODOO_DATABASE`, `ODOO_BASE_URL`, per-app ports). In attached mode, Ctrl-C stops all child processes and the first failing process is reported.
 
+`up` rebuilds the Odoo image by default, but Docker reuses cached layers when image inputs did not change. Use `--no-build` for a faster start when you know the image is current; the CLI warns when tracked image inputs no longer match the last recorded successful build.
+
 Before starting anything, `up` probes the derived Odoo port. If it is busy and the holder is not this worktree's own already-running stack (idempotent `up`), it fails fast with a `PortConflictError` naming the holder stack when the state registry knows it — set `ODOO_HTTP_PORT` to override, or `prune` stale environments.
 
 | Flag | Meaning |
@@ -234,6 +254,25 @@ Before starting anything, `up` probes the derived Odoo port. If it is busy and t
 | `--no-build` | start containers without rebuilding the image |
 | `--logs` | follow Odoo logs after start |
 | `--detach` | start containers and return |
+| `--json` | suppress decorative output; print one final JSON report line |
+| `--config <path>` | explicit config file path |
+
+### `oad restart`
+
+Restart the Odoo service for the current worktree without touching the database, volumes, or companion apps. This is the fast "Odoo is hung, kick the process" command.
+
+```bash
+oad restart
+oad restart --logs
+oad restart --rebuild
+```
+
+Plain `restart` uses the existing image and runs `docker compose restart <odoo-service>` after ensuring PostgreSQL is up. `--rebuild` rebuilds the Odoo image, removes the Odoo container, and recreates it; use it after changing `odoo.build`, `odoo.dockerfile`, or files copied into the image. `--logs` follows Odoo logs after restart and cannot be combined with `--json`.
+
+| Flag | Meaning |
+| --- | --- |
+| `--rebuild` | rebuild the image, remove the Odoo container, and recreate it |
+| `--logs` | follow Odoo logs after restart |
 | `--json` | suppress decorative output; print one final JSON report line |
 | `--config <path>` | explicit config file path |
 
@@ -273,13 +312,17 @@ Snapshots carry a key derived from the database-shaping recipe inputs: `initialM
 
 - `--no-template` forces a full init for one run, keeping the existing snapshot.
 - `--refresh-template` forces a full init and replaces the snapshot.
-- `--build` rebuilds the Odoo image before a reset or restore. Use it after editing `odoo.build`, a hand-written `odoo.dockerfile`, or files copied into the image.
+- `--build` rebuilds the Odoo image before a reset or restore. Use it after editing `odoo.build`, a hand-written `odoo.dockerfile`, or files copied into the image. Template invalidation chooses the database reset path; it does not by itself rebuild the image.
 - PostgreSQL is per-stack, so templates only accelerate resets within the same worktree.
 - Database names are budgeted so `<database>__tpl` fits PostgreSQL's 63-char identifier limit (derived names are capped at 58 chars); an explicitly overridden name longer than 58 chars simply skips snapshotting.
 
+#### Image freshness
+
+For recipes with `odoo.build` or `odoo.dockerfile`, the state registry records an image key after a successful build. `up`, `setup`, `restart --rebuild`, and `--build` lifecycle commands refresh it. Commands that run without building warn when the current image inputs differ from the recorded key, or when no successful build is known yet.
+
 ### `oad update <modules>`
 
-Update modules in the current worktree database. Starts PostgreSQL if needed, stops Odoo before the update when needed, and restarts Odoo after a successful update unless `--no-restart` is passed.
+Update modules in the current worktree database. Starts PostgreSQL if needed, stops Odoo before the update when needed, and restarts Odoo after a successful update unless `--no-restart` is passed. It does not rebuild the image unless `--build` is passed.
 
 ```bash
 oad update KL_setup
@@ -295,9 +338,9 @@ oad update KL_base,KL_sale,KL_stock
 
 ### `oad test`
 
-Run Odoo tests against the current worktree database. Options map to Odoo CLI flags, the exit code is non-zero on test failure, and recipes may define reusable test profiles (`test.profiles`) selected with `--profile`.
+Run Odoo tests against the current worktree database. Options map to Odoo CLI flags, the exit code is non-zero on test failure, and recipes may define reusable test profiles (`test.profiles`) selected with `--profile`. It does not rebuild the image unless `--build` is passed.
 
-Browser-based Odoo suites can be skipped by Odoo itself when the image is missing required Python/browser dependencies. `oad test` treats the known `websocket-client` skip as a failure and prints the fix: add `websocket-client` to `odoo.build.pipPackages`, rebuild with `oad test --build` or `oad setup`, and rerun.
+Browser-based Odoo suites can be skipped by Odoo itself when the image is missing required Python/browser dependencies. `oad test` treats known browser infrastructure skips (`websocket-client`, missing Chrome/Chromium, Chrome DevTools/headless startup failures) as failures and prints the fix. Partial Hoot/browser skips are reported as warnings; a Hoot run with skipped tests and zero passed tests is treated as a failure.
 
 | Flag | Meaning |
 | --- | --- |
@@ -354,10 +397,11 @@ The safety contract:
 
 ### `oad doctor`
 
-Environment health report (`✓`/`✗` per check, or `--json`): Docker daemon responsive, Compose is v2, Node >= 22.15, config discovery + validation (soft when absent), context derivation, Odoo port free or its holder identified, port collisions among known stacks, state registry openable and writable, git on PATH, WSL2 detection with setup guidance, and the current prune-candidate count. Exits 1 if any hard check fails.
+Environment health report (`✓`/`✗` per check, or `--json`): Docker daemon responsive, Compose is v2, Node >= 22.15, config discovery + validation (soft when absent), context derivation, Odoo port free or its holder identified, port collisions among known stacks, state registry openable and writable, image input/freshness checks, git on PATH, WSL2 detection with setup guidance, and the current prune-candidate count. Exits 1 if any hard check fails.
 
 | Flag | Meaning |
 | --- | --- |
+| `--deep` | run slower container probes such as browser-test dependency checks |
 | `--json` | print the checks array as JSON |
 | `--config <path>` | explicit config file path |
 
@@ -587,7 +631,7 @@ odoo: {
 }
 ```
 
-Then rebuild and rerun with `oad test --build ...` or run `oad setup`. `oad test` fails this known skip pattern instead of reporting a misleading green exit.
+Then rebuild and rerun with `oad test --build ...`, `oad restart --rebuild`, or `oad setup`. `oad test` fails known browser infrastructure skip patterns instead of reporting a misleading green exit. For deeper local diagnosis, run `oad doctor --deep` to check whether `websocket-client` imports inside the Odoo image.
 
 ## Releasing
 

@@ -38,6 +38,7 @@ describe.skipIf(!existsSync(CLI))("--help subcommand descriptions (run `pnpm bui
       "info",
       "setup",
       "up",
+      "restart",
       "down",
       "reset-db",
       "update",

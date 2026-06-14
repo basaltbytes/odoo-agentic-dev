@@ -37,6 +37,21 @@ const joinedCalls = (recording: {
   calls: Array<{ command: string; args: ReadonlyArray<string> }>;
 }) => recording.calls.map((c) => [c.command, ...c.args].join(" "));
 
+describe("OdooLifecycle.buildImage", () => {
+  it("builds only the Odoo image", async () => {
+    const { ctx, recipe, recording, run } = makeEnv();
+    await run(
+      Effect.gen(function* () {
+        const lifecycle = yield* OdooLifecycle;
+        yield* lifecycle.buildImage(recipe, ctx);
+      }),
+    );
+    const calls = joinedCalls(recording);
+    expect(calls.some((c) => c.includes("build odoo"))).toBe(true);
+    expect(calls.some((c) => c.includes("up -d db"))).toBe(false);
+  });
+});
+
 describe("OdooLifecycle.resetDatabase", () => {
   it("runs the documented sequence: db up, wait, terminate, drop, create, filestore, init", async () => {
     const { ctx, recipe, recording, run } = makeEnv();
@@ -283,8 +298,41 @@ describe("OdooLifecycle.runTests", () => {
       }),
     );
     expect(result.exitCode).toBe(0);
+    expect(result.stdout).toBe("");
+    expect(result.stderr).toBe("");
     expect(result.stdoutTail).toBe("");
     expect(result.stderrTail).toBe("");
+  });
+
+  it("keeps full captured test output even when the diagnostic scrolls out of the tail", async () => {
+    const rootDir = mkdtempSync(join(tmpdir(), "oad-lc-test-output-"));
+    tmp.push(rootDir);
+    const recipe = makeRecipe({
+      project: { id: "kl", dbPrefix: "kl" },
+      odoo: { version: "18.0", addons: [{ host: "addons", container: "/mnt/c" }] },
+    });
+    const ctx = makeCtx(recipe, "feature/z", rootDir);
+    const diagnostic = "websocket-client module is not installed";
+    const filler = Array.from({ length: 260 }, (_, i) => `line ${i}`).join("\n");
+    const recording = makeRecordingRunner((spec) =>
+      spec.args.includes("--test-enable")
+        ? { exitCode: 0, stdout: `${diagnostic}\n${filler}`, stderr: "" }
+        : undefined,
+    );
+    const run = runWith(
+      Layer.provide(
+        OdooLifecycleLive,
+        Layer.merge(Layer.provide(DockerComposeLive, recording.layer), recording.layer),
+      ),
+    );
+    const result = await run(
+      Effect.gen(function* () {
+        const lifecycle = yield* OdooLifecycle;
+        return yield* lifecycle.runTests(recipe, ctx, {});
+      }),
+    );
+    expect(result.stdout).toContain(diagnostic);
+    expect(result.stdoutTail).not.toContain(diagnostic);
   });
 
   it("builds before running tests when requested", async () => {

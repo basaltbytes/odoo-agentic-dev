@@ -49,6 +49,8 @@ const sharedContract = (run: () => Runner): void => {
       lastUsedAt: T1,
       templateDb: null,
       templateKey: null,
+      imageKey: null,
+      imageBuiltAt: null,
     });
   });
 
@@ -96,6 +98,8 @@ const sharedContract = (run: () => Runner): void => {
       lastUsedAt: T2,
       templateDb: "kl_feature_x__tpl",
       templateKey: "abcd1234",
+      imageKey: null,
+      imageBuiltAt: null,
     });
   });
 
@@ -156,6 +160,29 @@ const sharedContract = (run: () => Runner): void => {
         return yield* store.get("kl_kl_feature_x");
       }),
     );
+    expect(row?.templateDb).toBeNull();
+    expect(row?.templateKey).toBeNull();
+  });
+
+  it("setImageBuild records and clears image metadata", async () => {
+    const row = await run()(
+      Effect.gen(function* () {
+        const store = yield* StateStore;
+        yield* store.upsert(env());
+        yield* store.setImageBuild("kl_kl_feature_x", {
+          key: "image123",
+          builtAt: "2026-06-03T00:00:00.000Z",
+        });
+        yield* store.setImageBuild("kl_kl_feature_x", null);
+        yield* store.setImageBuild("kl_kl_feature_x", {
+          key: "image456",
+          builtAt: "2026-06-04T00:00:00.000Z",
+        });
+        return yield* store.get("kl_kl_feature_x");
+      }),
+    );
+    expect(row?.imageKey).toBe("image456");
+    expect(row?.imageBuiltAt).toBe("2026-06-04T00:00:00.000Z");
     expect(row?.templateDb).toBeNull();
     expect(row?.templateKey).toBeNull();
   });

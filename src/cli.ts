@@ -10,6 +10,7 @@ import { infoCommand } from "./commands/info.js";
 import { initCommand } from "./commands/init.js";
 import { setupCommand } from "./commands/setup.js";
 import { upCommand } from "./commands/up.js";
+import { restartCommand } from "./commands/restart.js";
 import { downCommand } from "./commands/down.js";
 import { resetDbCommand } from "./commands/reset-db.js";
 import { updateCommand } from "./commands/update.js";
@@ -47,6 +48,7 @@ const root = Command.make("odoo-agentic-dev").pipe(
     infoCommand,
     setupCommand,
     upCommand,
+    restartCommand,
     downCommand,
     resetDbCommand,
     updateCommand,

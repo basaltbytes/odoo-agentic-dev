@@ -3,6 +3,7 @@ import { Console, Effect, Option } from "effect";
 import { Command, Flag } from "effect/unstable/cli";
 import { loadRecipe } from "../config/load-recipe.js";
 import { classifyEnvironments } from "../core/environment.js";
+import { computeImageKeyForContext } from "../core/image-fingerprint.js";
 import { buildWorktreeContext } from "../core/worktree-context.js";
 import type { WorktreeContext } from "../core/worktree-context.js";
 import { tail } from "../errors/errors.js";
@@ -79,6 +80,7 @@ export const formatDoctorReport = (checks: ReadonlyArray<DoctorCheck>): string =
  */
 export const collectDoctorChecks = (
   explicitConfigPath: string | undefined,
+  options: { readonly deep?: boolean | undefined } = {},
 ): Effect.Effect<
   ReadonlyArray<DoctorCheck>,
   never,
@@ -223,6 +225,76 @@ export const collectDoctorChecks = (
         : rowsResult.message,
     });
 
+    if (config.ok && ctx !== null) {
+      const currentCtx = ctx;
+      const image = yield* computeImageKeyForContext(config.recipe, currentCtx).pipe(
+        Effect.map((key) => ({ ok: true as const, key })),
+        Effect.catch((error) => Effect.succeed({ ok: false as const, message: error.message })),
+      );
+      checks.push({
+        name: "image-inputs",
+        ok: image.ok,
+        hard: false,
+        detail: image.ok
+          ? image.key === null
+            ? "stock/prebuilt image; no oad-managed build inputs"
+            : `managed image key ${image.key.slice(0, 12)}`
+          : image.message,
+      });
+
+      if (image.ok) {
+        const row = rows?.find((r) => r.composeProject === currentCtx.composeProjectName);
+        const fresh = image.key === null || row?.imageKey === image.key;
+        checks.push({
+          name: "image-fresh",
+          ok: fresh,
+          hard: false,
+          detail:
+            image.key === null
+              ? "not applicable for stock/prebuilt images"
+              : row === undefined
+                ? "no state row for this worktree yet; run setup/up/restart --rebuild"
+                : row.imageKey === null
+                  ? "no successful image build recorded for this worktree"
+                  : fresh
+                    ? `last built ${row.imageBuiltAt ?? "(unknown time)"}`
+                    : "image inputs changed since the last successful build",
+        });
+      }
+
+      if (options.deep === true && image.ok) {
+        const browserDeps = yield* compose.prepareComposeFile(config.recipe, currentCtx).pipe(
+          Effect.flatMap((ref) =>
+            compose.tryRun(ref, [
+              "run",
+              "--rm",
+              "--no-deps",
+              config.recipe.odoo.serviceName,
+              "python3",
+              "-c",
+              "import websocket",
+            ]),
+          ),
+          Effect.map((result) => ({
+            ok: result.exitCode === 0,
+            detail:
+              result.exitCode === 0
+                ? "websocket-client import works in the Odoo image"
+                : tail(result.stderr || result.stdout) || `python exited ${result.exitCode}`,
+          })),
+          Effect.catch((error) =>
+            Effect.succeed({ ok: false, detail: tail(String(error)) || String(error) }),
+          ),
+        );
+        checks.push({
+          name: "browser-test-deps",
+          ok: browserDeps.ok,
+          hard: false,
+          detail: browserDeps.detail,
+        });
+      }
+    }
+
     const gitVersion = yield* exec("git", ["--version"]);
     checks.push({
       name: "git",
@@ -277,12 +349,17 @@ export const collectDoctorChecks = (
 export const doctorCommand = Command.make(
   "doctor",
   {
+    deep: Flag.boolean("deep").pipe(
+      Flag.withDescription("run slower container probes such as browser-test dependency checks"),
+    ),
     json: Flag.boolean("json").pipe(Flag.withDescription("print machine-readable JSON")),
     config: Flag.string("config").pipe(Flag.optional),
   },
   (flags) =>
     Effect.gen(function* () {
-      const checks = yield* collectDoctorChecks(Option.getOrUndefined(flags.config));
+      const checks = yield* collectDoctorChecks(Option.getOrUndefined(flags.config), {
+        deep: flags.deep,
+      });
       yield* Console.log(
         flags.json ? JSON.stringify({ checks }, null, 2) : formatDoctorReport(checks),
       );

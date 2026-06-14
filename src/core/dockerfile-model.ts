@@ -5,9 +5,10 @@ export const GENERATED_DOCKERFILE_RELATIVE_PATH = ".odoo-agentic-dev/Dockerfile.
 const requirementsTarget = (index: number): string => `/tmp/oad-requirements-${index}.txt`;
 
 /**
- * Deterministic Dockerfile from `odoo.build`: FROM the official image, COPY
- * declared files and requirements, one apt layer, one pip layer, back to the
- * odoo user. Lists render in declaration order — same config, same bytes.
+ * Deterministic Dockerfile from `odoo.build`: FROM the official image, one apt
+ * layer, requirements COPY + one pip layer, arbitrary COPYs, raw RUNs, back to
+ * the odoo user. Expensive dependency layers stay cacheable when copied app
+ * assets change. Lists render in declaration order — same config, same bytes.
  */
 export const renderDockerfile = (version: string, build: OdooImageBuild): string => {
   const lines: Array<string> = [
@@ -16,13 +17,6 @@ export const renderDockerfile = (version: string, build: OdooImageBuild): string
     "USER root",
   ];
 
-  build.pipRequirements.forEach((file, index) => {
-    lines.push(`COPY ${file} ${requirementsTarget(index)}`);
-  });
-  for (const entry of build.copy) {
-    lines.push(`COPY ${entry.from} ${entry.to}`);
-  }
-
   if (build.aptPackages.length > 0) {
     lines.push(
       "RUN apt-get update \\",
@@ -30,6 +24,10 @@ export const renderDockerfile = (version: string, build: OdooImageBuild): string
       "    && rm -rf /var/lib/apt/lists/*",
     );
   }
+
+  build.pipRequirements.forEach((file, index) => {
+    lines.push(`COPY ${file} ${requirementsTarget(index)}`);
+  });
 
   const pipArgs = [
     ...build.pipRequirements.map((_, index) => `-r ${requirementsTarget(index)}`),
@@ -40,6 +38,10 @@ export const renderDockerfile = (version: string, build: OdooImageBuild): string
     lines.push(
       `RUN python3 -m pip install --break-system-packages --ignore-installed ${pipArgs.join(" ")}`,
     );
+  }
+
+  for (const entry of build.copy) {
+    lines.push(`COPY ${entry.from} ${entry.to}`);
   }
 
   for (const step of build.run) {

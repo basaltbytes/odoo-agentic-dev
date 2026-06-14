@@ -28,6 +28,10 @@ import type { ComposeRef } from "./docker-compose.js";
 import { CommandRunner, runInheritedOrFail } from "./command-runner.js";
 
 export interface OdooLifecycleApi {
+  readonly buildImage: (
+    recipe: OdooAgenticDevConfig,
+    ctx: WorktreeContext,
+  ) => Effect.Effect<void, RuntimeError>;
   readonly databaseExists: (
     recipe: OdooAgenticDevConfig,
     ctx: WorktreeContext,
@@ -71,7 +75,13 @@ export interface OdooLifecycleApi {
     ctx: WorktreeContext,
     options: OdooTestOptions,
   ) => Effect.Effect<
-    { readonly exitCode: number; readonly stdoutTail: string; readonly stderrTail: string },
+    {
+      readonly exitCode: number;
+      readonly stdout: string;
+      readonly stderr: string;
+      readonly stdoutTail: string;
+      readonly stderrTail: string;
+    },
     RuntimeError
   >;
 }
@@ -141,6 +151,12 @@ export const OdooLifecycleLive = Layer.effect(
       );
 
     return {
+      buildImage: (recipe, ctx) =>
+        Effect.gen(function* () {
+          const ref = yield* compose.prepareComposeFile(recipe, ctx);
+          yield* buildOdooImage(recipe, ref);
+        }),
+
       databaseExists: (recipe, ctx) =>
         Effect.gen(function* () {
           const ref = yield* compose.prepareComposeFile(recipe, ctx);
@@ -285,6 +301,8 @@ export const OdooLifecycleLive = Layer.effect(
           );
           return {
             exitCode: result.exitCode,
+            stdout: result.stdout,
+            stderr: result.stderr,
             stdoutTail: tail(result.stdout, 200),
             stderrTail: tail(result.stderr, 200),
           };

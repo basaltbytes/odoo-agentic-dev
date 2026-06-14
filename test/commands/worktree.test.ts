@@ -178,12 +178,15 @@ const makeLifecycle = (calls: Array<string>) => {
       calls.push(name);
     });
   return Layer.succeed(OdooLifecycle, {
+    buildImage: () => record("buildImage"),
     databaseExists: () => record("databaseExists").pipe(Effect.as(true)),
     resetDatabase: () => record("resetDatabase"),
     runPostInitHooks: () => record("runPostInitHooks"),
     updateModules: () => record("updateModules"),
     runTests: () =>
-      record("runTests").pipe(Effect.as({ exitCode: 0, stdoutTail: "", stderrTail: "" })),
+      record("runTests").pipe(
+        Effect.as({ exitCode: 0, stdout: "", stderr: "", stdoutTail: "", stderrTail: "" }),
+      ),
     snapshotTemplate: () => record("snapshotTemplate"),
     restoreFromTemplate: () => record("restoreFromTemplate"),
   });
@@ -384,6 +387,8 @@ describe("runWorktreeRemove", () => {
     lastUsedAt: "2026-01-01T00:00:00.000Z",
     templateDb: null,
     templateKey: null,
+    imageKey: null,
+    imageBuiltAt: null,
   });
 
   const makeEnv = (initialRows: Parameters<typeof makeFakeStateStore>[0] = []) => {

@@ -39,11 +39,22 @@ export default {
 }
 `;
 
-const writeConfig = (): string => {
+const BUILD_CONFIG_SOURCE = `
+export default {
+  project: { id: "fixture", dbPrefix: "fx" },
+  odoo: {
+    version: "18.0",
+    build: { pipPackages: ["websocket-client"] },
+    addons: [{ host: "addons", container: "/mnt/extra-addons/custom" }]
+  }
+}
+`;
+
+const writeConfig = (source = CONFIG_SOURCE): string => {
   const dir = mkdtempSync(join(tmpdir(), "oad-doctor-"));
   tmp.push(dir);
   const path = join(dir, "odoo-agentic-dev.config.mjs");
-  writeFileSync(path, CONFIG_SOURCE);
+  writeFileSync(path, source);
   return path;
 };
 
@@ -157,6 +168,8 @@ describe("collectDoctorChecks", () => {
     expect(byName(checks, "port")).toMatchObject({ ok: true, hard: true });
     expect(byName(checks, "port").detail).toMatch(/port \d+ is free/);
     expect(byName(checks, "port-collisions")).toMatchObject({ ok: true, hard: false });
+    expect(byName(checks, "image-inputs")).toMatchObject({ ok: true, hard: false });
+    expect(byName(checks, "image-fresh")).toMatchObject({ ok: true, hard: false });
     expect(byName(checks, "wsl")).toMatchObject({ ok: true, hard: false });
     expect(byName(checks, "prune-candidates")).toMatchObject({ ok: true, hard: false });
     expect(hasHardFailure(checks)).toBe(false);
@@ -214,6 +227,8 @@ describe("collectDoctorChecks", () => {
           lastUsedAt: new Date().toISOString(),
           templateDb: null,
           templateKey: null,
+          imageKey: null,
+          imageBuiltAt: null,
         },
       ],
     });
@@ -239,6 +254,8 @@ describe("collectDoctorChecks", () => {
       lastUsedAt: new Date().toISOString(),
       templateDb: null,
       templateKey: null,
+      imageKey: null,
+      imageBuiltAt: null,
     };
     const { run } = makeEnv({
       rows: [
@@ -255,6 +272,23 @@ describe("collectDoctorChecks", () => {
     expect(collisions.detail).toContain("port 18300: fixture_a, fixture_b");
   });
 
+  it("reports managed image freshness as a soft stale check when no build is recorded", async () => {
+    const { run } = makeEnv({});
+    const checks = await run(collectDoctorChecks(writeConfig(BUILD_CONFIG_SOURCE)));
+    expect(byName(checks, "image-inputs")).toMatchObject({ ok: true, hard: false });
+    expect(byName(checks, "image-inputs").detail).toContain("managed image key");
+    expect(byName(checks, "image-fresh")).toMatchObject({ ok: false, hard: false });
+    expect(byName(checks, "image-fresh").detail).toContain("no state row");
+    expect(hasHardFailure(checks)).toBe(false);
+  });
+
+  it("--deep probes browser test dependencies inside the configured Odoo image", async () => {
+    const { run } = makeEnv({});
+    const checks = await run(collectDoctorChecks(writeConfig(), { deep: true }));
+    expect(byName(checks, "browser-test-deps")).toMatchObject({ ok: true, hard: false });
+    expect(byName(checks, "browser-test-deps").detail).toContain("websocket-client");
+  });
+
   it("a broken state DB is a hard failure and degrades the dependent checks", async () => {
     const fail = <A>(label: string): Effect.Effect<A, StateError> =>
       Effect.fail(new StateError({ reason: `${label}: disk melted` }));
@@ -265,6 +299,7 @@ describe("collectDoctorChecks", () => {
       list: () => fail("list"),
       remove: () => fail("remove"),
       setTemplate: () => fail("setTemplate"),
+      setImageBuild: () => fail("setImageBuild"),
     });
     const { run } = makeEnv({ storeLayer: failingStore });
     const checks = await run(collectDoctorChecks(writeConfig()));
@@ -291,6 +326,8 @@ describe("collectDoctorChecks", () => {
           lastUsedAt: new Date().toISOString(),
           templateDb: null,
           templateKey: null,
+          imageKey: null,
+          imageBuiltAt: null,
         },
       ],
     });

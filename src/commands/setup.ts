@@ -14,7 +14,12 @@ import type { StateStoreApi } from "../platform/state-store.js";
 import type { GitApi } from "../platform/git.js";
 import { resolveContext } from "./resolve-context.js";
 import { computeTemplateKeyForContext, guardReset, runResetFlow } from "./reset-db.js";
-import { recordEnvironment, warnOrAutoClean } from "./state-hooks.js";
+import {
+  recordEnvironment,
+  recordImageBuild,
+  reportImageFreshness,
+  warnOrAutoClean,
+} from "./state-hooks.js";
 import { resetPathActions, resetPathMode, withJsonReport } from "./json-report.js";
 import type { CommandReporter } from "./json-report.js";
 import { buildInfoText } from "./info.js";
@@ -102,6 +107,7 @@ export const runSetup = (
           yield* report.action("build-image");
           const ref = yield* compose.prepareComposeFile(recipe, ctx);
           yield* compose.stream(ref, ["build", recipe.odoo.serviceName]);
+          yield* reportImageFreshness(report, yield* recordImageBuild(recipe, ctx));
           break;
         }
         case "reset-db": {

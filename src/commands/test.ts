@@ -5,7 +5,12 @@ import type { OdooAgenticDevConfig } from "../core/project-recipe.js";
 import type { OdooTestOptions } from "../core/command-plan.js";
 import { OdooLifecycle } from "../platform/odoo-lifecycle.js";
 import { resolveContext } from "./resolve-context.js";
-import { recordEnvironment } from "./state-hooks.js";
+import {
+  buildImageAndRecord,
+  recordEnvironment,
+  reportImageFreshness,
+  warnIfImageStale,
+} from "./state-hooks.js";
 import { withJsonReport } from "./json-report.js";
 
 export const resolveTestOptions = (
@@ -45,14 +50,72 @@ export const resolveTestOptions = (
   });
 };
 
+export type TestOutputAnalysis = {
+  readonly fatalReason: string | null;
+  readonly warnings: ReadonlyArray<string>;
+};
+
+const ANSI_RE = new RegExp(`${String.fromCharCode(27)}(?:[@-Z\\\\-_]|\\[[0-?]*[ -/]*[@-~])`, "g");
+
+const normalizeOutput = (output: { readonly stdout: string; readonly stderr: string }): string =>
+  `${output.stdout}\n${output.stderr}`.replace(ANSI_RE, "").replace(/\r\n?/g, "\n");
+
+const FATAL_BROWSER_SKIP_PATTERNS: ReadonlyArray<RegExp> = [
+  /\bwebsocket-client module is not installed\b/i,
+  /\bChrome executable not found\b/i,
+  /\b(?:google-chrome|chromium(?:-browser)?|chrome)[^\n:]* not found\b/i,
+  /\bChrome headless failed to start\b/i,
+  /\bFailed to detect chrome devtools port after \d+(?:\.\d+)?s\b/i,
+  /\bError during Chrome headless connection\b/i,
+  /\bError during Chrome connection: never found 'page' target\b/i,
+  /\bCannot connect to chrome dev tools\b/i,
+];
+
+const HOOT_SKIPPED_COUNTER =
+  /\bskipped:[^\S\r\n]*([1-9]\d*)\b|\b([1-9]\d*)[^\S\r\n]+tests?[^\S\r\n]+skipped\b/i;
+const HOOT_ZERO_PASSED = /\b(?:\[HOOT\]\s*)?Passed\s+0\s+tests\b/i;
+const HOOT_SOME_PASSED = /\b(?:\[HOOT\]\s*)?Passed\s+([1-9]\d*)\s+tests\b/i;
+
+const browserDependencyMessage =
+  "Odoo skipped browser tests because required browser-test dependencies are missing in the image (for example `websocket-client`, Chrome, or Chromium). Add the missing package(s) to odoo.build, rebuild with `oad test --build`, `oad restart --rebuild`, or `oad setup`, then rerun the test command.";
+
+export const analyzeTestOutput = (output: {
+  readonly stdout: string;
+  readonly stderr: string;
+}): TestOutputAnalysis => {
+  const combined = normalizeOutput(output);
+  if (FATAL_BROWSER_SKIP_PATTERNS.some((pattern) => pattern.test(combined))) {
+    return { fatalReason: browserDependencyMessage, warnings: [] };
+  }
+
+  const skipped = HOOT_SKIPPED_COUNTER.exec(combined);
+  if (skipped !== null && HOOT_ZERO_PASSED.test(combined)) {
+    return {
+      fatalReason:
+        "Odoo reported skipped Hoot tests with zero passed tests. Treating the run as failed because the intended browser suite did not execute.",
+      warnings: [],
+    };
+  }
+  if (skipped !== null && HOOT_SOME_PASSED.test(combined)) {
+    const count = skipped[1] ?? skipped[2] ?? "some";
+    return {
+      fatalReason: null,
+      warnings: [`Odoo reported ${count} skipped Hoot/browser test(s).`],
+    };
+  }
+
+  return { fatalReason: null, warnings: [] };
+};
+
 export const detectSkippedBrowserSuite = (output: {
-  readonly stdoutTail: string;
-  readonly stderrTail: string;
+  readonly stdoutTail?: string;
+  readonly stderrTail?: string;
+  readonly stdout?: string;
+  readonly stderr?: string;
 }): string | null => {
-  const combined = `${output.stdoutTail}\n${output.stderrTail}`;
-  return /websocket-client/i.test(combined) && /skipp?ed/i.test(combined)
-    ? "Odoo skipped browser tests because the websocket-client Python package is missing in the image. Add `websocket-client` to odoo.build.pipPackages, rebuild with `oad test --build` or `oad setup`, then rerun the test command."
-    : null;
+  const stdout = output.stdout ?? output.stdoutTail ?? "";
+  const stderr = output.stderr ?? output.stderrTail ?? "";
+  return analyzeTestOutput({ stdout, stderr }).fatalReason;
 };
 
 export const testCommand = Command.make(
@@ -85,6 +148,9 @@ export const testCommand = Command.make(
         const { ctx, recipe } = yield* resolveContext(flags.config);
         yield* report.setContext(ctx);
         yield* recordEnvironment(recipe, ctx);
+        if (!flags.build) {
+          yield* reportImageFreshness(report, yield* warnIfImageStale(recipe, ctx, report.say));
+        }
         if (flags.includeDemo) {
           yield* report.say(
             "note: --include-demo has no effect in v1; reset the database with --without-demo=false instead",
@@ -99,19 +165,27 @@ export const testCommand = Command.make(
           build: flags.build,
         });
         const lifecycle = yield* OdooLifecycle;
-        const { exitCode, stderrTail, stdoutTail } = yield* lifecycle.runTests(
+        const runOptions = flags.build ? { ...options, build: false } : options;
+        if (flags.build) {
+          yield* buildImageAndRecord(recipe, ctx, report);
+        }
+        const { exitCode, stderr, stderrTail, stdout, stdoutTail } = yield* lifecycle.runTests(
           recipe,
           ctx,
-          options,
+          runOptions,
         );
-        const skipReason =
-          exitCode === 0 ? detectSkippedBrowserSuite({ stdoutTail, stderrTail }) : null;
+        const analysis =
+          exitCode === 0
+            ? analyzeTestOutput({ stdout, stderr })
+            : { fatalReason: null, warnings: [] };
+        const skipReason = analysis.fatalReason;
         const effectiveExitCode = skipReason === null ? exitCode : 1;
         yield* report.action("run-tests");
         yield* report.setExitCode(effectiveExitCode);
         yield* report.setExtra("stdoutTail", stdoutTail);
         yield* report.setExtra("stderrTail", stderrTail);
         if (skipReason !== null) yield* report.setExtra("skipReason", skipReason);
+        if (analysis.warnings.length > 0) yield* report.setExtra("warnings", analysis.warnings);
         // in json mode the stream-swap already routes process.stdout writes to
         // stderr, so the human-facing tail never reaches the JSON stdout line
         if (stdoutTail.length > 0) process.stdout.write(stdoutTail + "\n");
@@ -120,6 +194,7 @@ export const testCommand = Command.make(
           yield* Console.error(skipReason ?? `Tests failed (odoo exit ${exitCode})`);
           process.exitCode = effectiveExitCode;
         } else {
+          for (const warning of analysis.warnings) yield* Console.error(warning);
           yield* report.say("Tests passed");
         }
       }),

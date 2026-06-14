@@ -39,6 +39,10 @@ export interface StateStoreApi {
     composeProject: string,
     meta: { readonly databaseName: string; readonly key: string } | null,
   ) => Effect.Effect<void, StateError>;
+  readonly setImageBuild: (
+    composeProject: string,
+    meta: { readonly key: string; readonly builtAt?: string | undefined } | null,
+  ) => Effect.Effect<void, StateError>;
 }
 
 export const StateStore = Context.Service<StateStoreApi>("odoo-agentic-dev/StateStore");
@@ -65,7 +69,9 @@ CREATE TABLE IF NOT EXISTS environments (
   created_at      TEXT NOT NULL,
   last_used_at    TEXT NOT NULL,
   template_db     TEXT,
-  template_key    TEXT
+  template_key    TEXT,
+  image_key       TEXT,
+  image_built_at  TEXT
 );
 INSERT OR IGNORE INTO schema_meta (version) VALUES (1);
 `;
@@ -73,8 +79,9 @@ INSERT OR IGNORE INTO schema_meta (version) VALUES (1);
 const UPSERT_SQL = `
 INSERT INTO environments (
   compose_project, project_id, database_name, root_dir, worktree_name,
-  branch, odoo_http_port, shared, created_at, last_used_at, template_db, template_key
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL)
+  branch, odoo_http_port, shared, created_at, last_used_at, template_db, template_key,
+  image_key, image_built_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL)
 ON CONFLICT(compose_project) DO UPDATE SET
   project_id     = excluded.project_id,
   database_name  = excluded.database_name,
@@ -99,7 +106,24 @@ const toRow = (record: Record<string, unknown>): EnvironmentRow => ({
   lastUsedAt: String(record["last_used_at"]),
   templateDb: record["template_db"] === null ? null : String(record["template_db"]),
   templateKey: record["template_key"] === null ? null : String(record["template_key"]),
+  imageKey: record["image_key"] === null ? null : String(record["image_key"]),
+  imageBuiltAt: record["image_built_at"] === null ? null : String(record["image_built_at"]),
 });
+
+const migrateSchema = (db: DatabaseSync) => {
+  const columns = new Set(
+    db
+      .prepare("PRAGMA table_info(environments)")
+      .all()
+      .map((record) => String((record as Record<string, unknown>)["name"])),
+  );
+  if (!columns.has("image_key")) {
+    db.exec("ALTER TABLE environments ADD COLUMN image_key TEXT;");
+  }
+  if (!columns.has("image_built_at")) {
+    db.exec("ALTER TABLE environments ADD COLUMN image_built_at TEXT;");
+  }
+};
 
 // All effects happen lazily per-operation inside withDb (open → run → close,
 // so parallel agent sessions never hold the registry open); building the
@@ -137,6 +161,7 @@ export const StateStoreLive = Layer.effect(
             db.exec("PRAGMA busy_timeout=5000;");
             db.exec("PRAGMA journal_mode=WAL;");
             db.exec(SCHEMA_SQL);
+            migrateSchema(db);
             return thunk(db);
           } finally {
             db.close();
@@ -196,6 +221,16 @@ export const StateStoreLive = Layer.effect(
           db.prepare(
             "UPDATE environments SET template_db = ?, template_key = ? WHERE compose_project = ?",
           ).run(meta?.databaseName ?? null, meta?.key ?? null, composeProject);
+        }),
+      setImageBuild: (composeProject, meta) =>
+        withDb("setImageBuild", (db) => {
+          db.prepare(
+            "UPDATE environments SET image_key = ?, image_built_at = ? WHERE compose_project = ?",
+          ).run(
+            meta?.key ?? null,
+            meta === null ? null : (meta.builtAt ?? new Date().toISOString()),
+            composeProject,
+          );
         }),
     };
   }),

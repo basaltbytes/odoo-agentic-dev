@@ -41,12 +41,15 @@ const makeFakeLifecycle = (): {
   return {
     calls,
     layer: Layer.succeed(OdooLifecycle, {
+      buildImage: () => record("buildImage"),
       databaseExists: () => record("databaseExists").pipe(Effect.as(true)),
       resetDatabase: () => record("resetDatabase"),
       runPostInitHooks: () => record("runPostInitHooks"),
       updateModules: () => record("updateModules"),
       runTests: () =>
-        record("runTests").pipe(Effect.as({ exitCode: 0, stdoutTail: "", stderrTail: "" })),
+        record("runTests").pipe(
+          Effect.as({ exitCode: 0, stdout: "", stderr: "", stdoutTail: "", stderrTail: "" }),
+        ),
       snapshotTemplate: () => record("snapshotTemplate"),
       restoreFromTemplate: () => record("restoreFromTemplate"),
     }),
@@ -61,6 +64,8 @@ const seedRow = (template: { databaseName: string; key: string } | null) => {
     lastUsedAt: "2026-06-01T00:00:00.000Z",
     templateDb: template?.databaseName ?? null,
     templateKey: template?.key ?? null,
+    imageKey: null,
+    imageBuiltAt: null,
   });
   return store;
 };
@@ -163,6 +168,33 @@ describe("computeTemplateKeyForContext", () => {
     const second = await Effect.runPromise(computeTemplateKeyForContext(recipe, ctx));
     writeFileSync(join(rootDir, "config", "odoo.conf"), "workers = 2\n");
     const third = await Effect.runPromise(computeTemplateKeyForContext(recipe, ctx));
+    expect(second).not.toBe(first);
+    expect(third).not.toBe(second);
+  });
+
+  it("changes when copied image inputs or imageName change", async () => {
+    const rootDir = mkdtempSync(join(tmpdir(), "oad-template-copy-key-"));
+    tmp.push(rootDir);
+    mkdirSync(join(rootDir, "scripts"), { recursive: true });
+    writeFileSync(join(rootDir, "scripts", "seed.py"), "print('a')\n");
+    const make = (imageName: string) =>
+      makeRecipe({
+        project: { id: "kl", dbPrefix: "kl" },
+        odoo: {
+          version: "18.0",
+          imageName,
+          build: { copy: [{ from: "scripts", to: "/opt/scripts" }] },
+          addons: [{ host: "addons", container: "/mnt/c" }],
+        },
+      });
+    const firstRecipe = make("kl-odoo:a");
+    const firstCtx = makeCtx(firstRecipe, "feature/z", rootDir);
+    const first = await Effect.runPromise(computeTemplateKeyForContext(firstRecipe, firstCtx));
+    writeFileSync(join(rootDir, "scripts", "seed.py"), "print('b')\n");
+    const second = await Effect.runPromise(computeTemplateKeyForContext(firstRecipe, firstCtx));
+    const renamedRecipe = make("kl-odoo:b");
+    const renamedCtx = makeCtx(renamedRecipe, "feature/z", rootDir);
+    const third = await Effect.runPromise(computeTemplateKeyForContext(renamedRecipe, renamedCtx));
     expect(second).not.toBe(first);
     expect(third).not.toBe(second);
   });
