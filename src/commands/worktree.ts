@@ -26,6 +26,7 @@ import type { StateStoreApi } from "../platform/state-store.js";
 import { withStateDbRoot } from "../platform/state-store.js";
 import type { OdooLifecycleApi } from "../platform/odoo-lifecycle.js";
 import { runSetup } from "./setup.js";
+import { buildDownArgs } from "./down.js";
 import { withStdoutRedirectedToStderr } from "./json-report.js";
 import type { CommandReporter } from "./json-report.js";
 
@@ -322,7 +323,7 @@ export type WorktreeRemoveOptions = {
  * The WorktreeRemove flow: resolve the worktree's own context when its
  * directory (and config) still exist and run `down --volumes` semantics;
  * when the directory is gone, rebuild the identity from the directory name
- * against the current project root and tear down by container label. A shared
+ * against the current project root and tear down by Compose project label. A shared
  * database is never torn down without --allow-shared.
  */
 export const runWorktreeRemove = (
@@ -347,7 +348,7 @@ export const runWorktreeRemove = (
           );
           return true;
         }
-        yield* log(`${reason}; tearing down ${row.composeProject} by container label`);
+        yield* log(`${reason}; tearing down ${row.composeProject} by compose project label`);
         yield* compose.ensureAvailable();
         yield* compose.removeByLabel(row.composeProject);
         yield* store.remove(row.composeProject);
@@ -387,7 +388,15 @@ export const runWorktreeRemove = (
         yield* log(`tearing down ${ctx.composeProjectName} (database ${ctx.databaseName})`);
         yield* compose.ensureAvailable();
         const ref = yield* compose.prepareComposeFile(discovered.recipe, ctx);
-        yield* compose.run(ref, ["down", "--volumes"]);
+        yield* compose
+          .run(ref, buildDownArgs({ volumes: true }))
+          .pipe(
+            Effect.catchTag("ComposeCommandError", (error) =>
+              log(
+                `compose down failed (${error.message}); falling back to label-based teardown for ${ctx.composeProjectName}`,
+              ).pipe(Effect.andThen(compose.removeByLabel(ctx.composeProjectName))),
+            ),
+          );
         yield* withStateDbRoot(discovered.rootDir, store.remove(ctx.composeProjectName));
         yield* log(`removed ${ctx.composeProjectName} from the registry`);
         return;
@@ -409,7 +418,9 @@ export const runWorktreeRemove = (
       );
       return;
     }
-    yield* log(`worktree dir gone; tearing down ${ctx.composeProjectName} by container label`);
+    yield* log(
+      `worktree dir gone; tearing down ${ctx.composeProjectName} by compose project label`,
+    );
     yield* compose.ensureAvailable();
     yield* compose.removeByLabel(ctx.composeProjectName);
     yield* withStateDbRoot(current.rootDir, store.remove(ctx.composeProjectName));

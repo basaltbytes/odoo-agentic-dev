@@ -441,10 +441,57 @@ describe("runWorktreeRemove", () => {
         "--project-directory",
         wtPath,
         "down",
+        "--remove-orphans",
         "--volumes",
       ],
     });
     expect(store.rows.has("kl_kl_worktree_feat")).toBe(false);
+  });
+
+  it("falls back to label-based teardown when compose down fails in an existing worktree", async () => {
+    const wtPath = mkdtempSync(join(tmpdir(), "oad-wt-rm-fallback-"));
+    tmp.push(wtPath);
+    writeFileSync(join(wtPath, "odoo-agentic-dev.config.mjs"), CONFIG_SOURCE);
+    const recording = makeRecordingRunner((spec) => {
+      if (spec.args[0] === "compose" && spec.args.includes("down")) {
+        return { exitCode: 1, stdout: "", stderr: "compose file no longer matches" };
+      }
+      if (spec.args[0] === "ps") return { exitCode: 0, stdout: "c1\n", stderr: "" };
+      if (spec.args[0] === "volume" && spec.args[1] === "ls") {
+        return { exitCode: 0, stdout: "v1\n", stderr: "" };
+      }
+      if (spec.args[0] === "network" && spec.args[1] === "ls") {
+        return { exitCode: 0, stdout: "n1\n", stderr: "" };
+      }
+      return undefined;
+    });
+    const store = makeFakeStateStore([seedRow("kl_kl_worktree_feat", "kl_worktree_feat", wtPath)]);
+    const layer = Layer.mergeAll(
+      Layer.provide(DockerComposeLive, recording.layer),
+      recording.layer,
+      store.layer,
+      makeFakeGit({ _tag: "Branch", branch: "worktree-feat" }),
+    );
+    const logged: Array<string> = [];
+    const log = (line: string) =>
+      Effect.sync(() => {
+        logged.push(line);
+      });
+    await runWith(layer)(
+      runWorktreeRemove({
+        path: wtPath,
+        allowShared: false,
+        env: {},
+        cwd: wtPath,
+        configFlag: undefined,
+        log,
+      }),
+    );
+    expect(recording.calls.map((c) => c.args)).toContainEqual(["rm", "-f", "c1"]);
+    expect(recording.calls.map((c) => c.args)).toContainEqual(["volume", "rm", "v1"]);
+    expect(recording.calls.map((c) => c.args)).toContainEqual(["network", "rm", "n1"]);
+    expect(store.rows.has("kl_kl_worktree_feat")).toBe(false);
+    expect(logged.some((line) => line.includes("falling back"))).toBe(true);
   });
 
   it("refuses to tear down a shared database without --allow-shared", async () => {

@@ -122,7 +122,7 @@ describe("buildComposeModel", () => {
     expect(db.healthcheck.test).toEqual(["CMD-SHELL", POSTGRES_HEALTHCHECK_COMMAND]);
   });
 
-  it("stamps oad labels on both services and both volumes", () => {
+  it("stamps oad labels on services, volumes, and the default network", () => {
     const expected = {
       "dev.basaltbytes.oad": "1",
       "dev.basaltbytes.oad.project-id": "kriss-laure",
@@ -137,6 +137,7 @@ describe("buildComposeModel", () => {
       "db-data": { labels: expected },
       "web-data": { labels: expected },
     });
+    expect(model.networks).toEqual({ default: { labels: expected } });
   });
 
   it("renders an empty-string branch label when the context has no branch", () => {
@@ -193,6 +194,7 @@ describe("buildComposeModel (portable mode)", () => {
       "db-data": { labels: expected },
       "web-data": { labels: expected },
     });
+    expect(portable.networks).toEqual({ default: { labels: expected } });
     const odooLabels = (portable.services["odoo"] as Record<string, any>)["labels"] as Record<
       string,
       string

@@ -2,10 +2,17 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { Effect } from "effect";
 import { buildUpPlan, guardUpJson } from "../../src/commands/up.js";
-import { buildDownArgs, finalizeDownState, guardDown } from "../../src/commands/down.js";
+import {
+  buildDownArgs,
+  finalizeDownState,
+  guardDown,
+  runDownDocker,
+} from "../../src/commands/down.js";
 import { rowFromContext } from "../../src/commands/state-hooks.js";
 import { SharedDatabaseProtectionError, UsageError } from "../../src/errors/errors.js";
 import { makeFakeStateStore } from "../../src/testing/fake-adapters.js";
+import type { DockerComposeApi, ComposeRef } from "../../src/platform/docker-compose.js";
+import { ComposeCommandError } from "../../src/errors/errors.js";
 import { makeCtx, makeRecipe, runSyncFailure, runSyncSuccess, runWith } from "../helpers.js";
 
 const recipe = makeRecipe({
@@ -114,8 +121,51 @@ describe("down guard", () => {
   });
 
   it("buildDownArgs maps --volumes", () => {
-    expect(buildDownArgs({ volumes: false })).toEqual(["down"]);
-    expect(buildDownArgs({ volumes: true })).toEqual(["down", "--volumes"]);
+    expect(buildDownArgs({ volumes: false })).toEqual(["down", "--remove-orphans"]);
+    expect(buildDownArgs({ volumes: true })).toEqual(["down", "--remove-orphans", "--volumes"]);
+  });
+
+  it("falls back to label teardown when down --volumes cannot use the compose file", async () => {
+    const calls: Array<ReadonlyArray<string>> = [];
+    const ref: ComposeRef = {
+      projectName: onFeature.composeProjectName,
+      composeFile: "/missing/docker-compose.yml",
+      projectDir: "/w",
+      env: {},
+    };
+    const compose: DockerComposeApi = {
+      ensureAvailable: () => Effect.void,
+      listProjects: () => Effect.succeed([]),
+      listLabeledContainers: () => Effect.succeed([]),
+      prepareComposeFile: () => Effect.succeed(ref),
+      run: () => Effect.die("not used"),
+      stream: (_ref, args) =>
+        Effect.sync(() => {
+          calls.push(args);
+        }).pipe(
+          Effect.andThen(
+            Effect.fail(
+              new ComposeCommandError({
+                args,
+                exitCode: 1,
+                stderrTail: "missing compose file",
+              }),
+            ),
+          ),
+        ),
+      tryRun: () => Effect.die("not used"),
+      waitForDb: () => Effect.void,
+      removeByLabel: (composeProject) =>
+        Effect.sync(() => {
+          calls.push(["removeByLabel", composeProject]);
+        }),
+    };
+    const mode = await Effect.runPromise(runDownDocker(compose, ref, onFeature, { volumes: true }));
+    expect(mode).toBe("label-fallback");
+    expect(calls).toEqual([
+      ["down", "--remove-orphans", "--volumes"],
+      ["removeByLabel", onFeature.composeProjectName],
+    ]);
   });
 });
 

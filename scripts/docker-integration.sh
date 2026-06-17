@@ -5,7 +5,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 pnpm build
 FIXTURE=$(mktemp -d)
-trap 'docker compose -p oad_ci -f "$FIXTURE/.odoo-agentic-dev/compose.generated.yml" down --volumes >/dev/null 2>&1 || true; rm -rf "$FIXTURE"' EXIT
+trap 'docker compose -p oad_ci -f "$FIXTURE/.odoo-agentic-dev/compose.generated.yml" down --remove-orphans --volumes >/dev/null 2>&1 || true; rm -rf "$FIXTURE"' EXIT
 cat > "$FIXTURE/odoo-agentic-dev.config.mjs" <<'EOF'
 export default {
   project: { id: "oad-ci", dbPrefix: "ci" },

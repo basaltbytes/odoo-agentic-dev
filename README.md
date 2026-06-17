@@ -299,7 +299,7 @@ Plain `restart` uses the existing image and runs `docker compose restart <odoo-s
 
 ### `oad down`
 
-Stop the current worktree stack. Uses the derived Compose project name, so other worktrees are never affected. A plain `down` keeps the environment in the state registry (only refreshing its last-used time); `down --volumes` removes the registry row along with the volumes.
+Stop the current worktree stack. Uses the derived Compose project name, so other worktrees are never affected. `down` passes `--remove-orphans` so old containers from earlier recipe shapes are removed too. A plain `down` keeps the environment in the state registry (only refreshing its last-used time); `down --volumes` removes the registry row along with the volumes.
 
 | Flag | Meaning |
 | --- | --- |
@@ -404,7 +404,7 @@ Garbage-collect dead environments. By default only clearly-dead targets are cand
 The safety contract:
 
 - Without `--yes`, `prune` is a dry run: it prints the kill list (stack, database, age, reason) and exits 1 when candidates exist, 0 when there are none. Nothing is removed.
-- With `--yes`, teardown is label-based (`docker rm -f` + `docker volume rm` by Compose project label), so it works even when the original compose file is gone; the registry row is removed last.
+- With `--yes`, teardown is label-based (`docker rm -f`, `docker volume rm`, and `docker network rm` by Compose project label), so it works even when the original compose file is gone; the registry row is removed last.
 - Shared environments are always skipped unless `--allow-shared` is passed.
 - The environment a command is currently running in is never an auto-clean candidate.
 
@@ -548,7 +548,7 @@ Attached `up` (without `--detach`) streams forever and never reaches a final lin
 
 Every lifecycle command records its environment (compose project, database, root dir, branch, port, timestamps, template metadata) in a shared SQLite registry so `list`, `prune`, port holder detection, and cleanup can see sibling worktrees. The default shared path is `${XDG_DATA_HOME:-~/.local/share}/odoo-agentic-dev/state.db`. If that location cannot be created or written (for example inside a restricted Codex sandbox), the CLI falls back to `.odoo-agentic-dev/state.db` under the nearest `odoo-agentic-dev.config.*` root, or under the current working directory when no config is discoverable. `ODOO_AGENTIC_DEV_STATE_DB` remains an absolute override for CI, tests, or an explicitly chosen repo-local registry. The registry needs no setup and no external dependency beyond the supported Node runtime.
 
-The registry is an index — Docker is the truth. Generated compose files stamp `dev.basaltbytes.oad.*` identity labels on services and volumes so `list`/`prune`/`doctor` can reconcile rows against reality and re-adopt stacks whose rows were lost. Project-supplied compose files (recipe `compose.file`) are not labeled; those environments are tracked by their registry rows alone.
+The registry is an index — Docker is the truth. Generated compose files stamp `dev.basaltbytes.oad.*` identity labels on services, volumes, and networks so `list`/`prune`/`doctor` can reconcile rows against reality and re-adopt stacks whose rows were lost. Project-supplied compose files (recipe `compose.file`) are not stamped with OAD labels; those environments are tracked by their registry rows and cleaned by their Docker Compose project label while the row exists.
 
 ## Automatic Cleanup
 

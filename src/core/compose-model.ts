@@ -6,6 +6,7 @@ import { GENERATED_DOCKERFILE_RELATIVE_PATH } from "./dockerfile-model.js";
 export type ComposeModel = {
   readonly services: Record<string, Record<string, unknown>>;
   readonly volumes: Record<string, { readonly labels: Record<string, string> }>;
+  readonly networks: Record<string, { readonly labels: Record<string, string> }>;
 };
 
 export const GENERATED_COMPOSE_RELATIVE_PATH = ".odoo-agentic-dev/compose.generated.yml";
@@ -16,7 +17,7 @@ const hostPath = (host: string): string =>
   host.startsWith("/") || host.startsWith("./") || host.startsWith("../") ? host : `./${host}`;
 
 /**
- * Drift-proofing labels stamped on every generated service and volume so
+ * Drift-proofing labels stamped on every generated service, volume, and network so
  * `list`/`prune`/`doctor` can reconcile Docker reality against the state
  * registry (and adopt stacks whose rows were lost) without the compose file.
  *
@@ -135,6 +136,7 @@ export const buildComposeModel = (
       },
     },
     volumes: { "db-data": { labels }, "web-data": { labels } },
+    networks: { default: { labels } },
   };
 };
 

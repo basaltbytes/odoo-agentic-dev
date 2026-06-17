@@ -4,12 +4,17 @@ import type { OdooAgenticDevConfig } from "../core/project-recipe.js";
 import type { WorktreeContext } from "../core/worktree-context.js";
 import { assertSharedDatabaseAllowed } from "../core/safety.js";
 import { DockerCompose } from "../platform/docker-compose.js";
+import type { ComposeRef, DockerComposeApi } from "../platform/docker-compose.js";
 import { StateStore } from "../platform/state-store.js";
 import type { StateStoreApi } from "../platform/state-store.js";
 import { withStateDbRoot } from "../platform/state-store.js";
 import { resolveContext } from "./resolve-context.js";
 import { withJsonReport } from "./json-report.js";
-import type { SharedDatabaseProtectionError, StateError } from "../errors/errors.js";
+import type {
+  ComposeCommandError,
+  SharedDatabaseProtectionError,
+  StateError,
+} from "../errors/errors.js";
 
 export const guardDown = (
   recipe: OdooAgenticDevConfig,
@@ -27,8 +32,31 @@ export const guardDown = (
 
 export const buildDownArgs = (flags: { volumes: boolean }): Array<string> => [
   "down",
+  "--remove-orphans",
   ...(flags.volumes ? ["--volumes"] : []),
 ];
+
+export type DownTeardownMode = "compose" | "label-fallback";
+
+export const runDownDocker = (
+  compose: DockerComposeApi,
+  ref: ComposeRef,
+  ctx: WorktreeContext,
+  flags: { volumes: boolean },
+): Effect.Effect<DownTeardownMode, ComposeCommandError> => {
+  const composeDown = compose
+    .stream(ref, buildDownArgs(flags))
+    .pipe(Effect.as<DownTeardownMode>("compose"));
+  return flags.volumes
+    ? composeDown.pipe(
+        Effect.catchTag("ComposeCommandError", () =>
+          compose
+            .removeByLabel(ctx.composeProjectName)
+            .pipe(Effect.as<DownTeardownMode>("label-fallback")),
+        ),
+      )
+    : composeDown;
+};
 
 /** After a successful teardown: `--volumes` forgets the environment, plain down only touches it. */
 export const finalizeDownState = (
@@ -69,8 +97,8 @@ export const downCommand = Command.make(
         yield* report.say(
           `Stopping compose project: ${ctx.composeProjectName} (database: ${ctx.databaseName})`,
         );
-        yield* compose.stream(ref, buildDownArgs(flags));
-        yield* report.action("compose-down");
+        const teardownMode = yield* runDownDocker(compose, ref, ctx, flags);
+        yield* report.action(teardownMode === "compose" ? "compose-down" : "label-teardown");
         if (flags.volumes) yield* report.action("remove-volumes");
         yield* report.setExtra("volumesRemoved", flags.volumes);
         yield* finalizeDownState(ctx, flags);

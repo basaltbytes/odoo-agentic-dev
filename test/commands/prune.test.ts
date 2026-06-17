@@ -60,6 +60,7 @@ const makeEnv = (options: {
   readonly branches?: ReadonlySet<string>;
   readonly containers?: Record<string, ReadonlyArray<string>>;
   readonly volumes?: Record<string, ReadonlyArray<string>>;
+  readonly networks?: Record<string, ReadonlyArray<string>>;
   readonly gitLayer?: Layer.Layer<GitApi>;
 }) => {
   const projectOf = (args: ReadonlyArray<string>): string =>
@@ -80,6 +81,10 @@ const makeEnv = (options: {
     }
     if (spec.args[0] === "volume" && spec.args[1] === "ls") {
       const names = options.volumes?.[projectOf(spec.args)] ?? [];
+      return { exitCode: 0, stdout: names.join("\n") + "\n", stderr: "" };
+    }
+    if (spec.args[0] === "network" && spec.args[1] === "ls") {
+      const names = options.networks?.[projectOf(spec.args)] ?? [];
       return { exitCode: 0, stdout: names.join("\n") + "\n", stderr: "" };
     }
     return undefined;
@@ -137,30 +142,18 @@ describe("runPrune", () => {
       branches: new Set([]),
       containers: { kl_gone: ["c1", "c2"] },
       volumes: { kl_gone: ["v1"] },
+      networks: { kl_gone: ["n1"] },
     });
     const report = await run(runPrune({ ...baseOptions, yes: true }));
     expect(report.removed).toEqual([{ composeProject: "kl_gone", reason: "gone-branch" }]);
     expect(store.rows.has("kl_gone")).toBe(false);
     expect(recording.calls.map((c) => c.args).filter((args) => args[0] !== "compose")).toEqual([
-      [
-        "ps",
-        "-aq",
-        "--filter",
-        "label=com.docker.compose.project=kl_gone",
-        "--filter",
-        "label=dev.basaltbytes.oad=1",
-      ],
+      ["ps", "-aq", "--filter", "label=com.docker.compose.project=kl_gone"],
       ["rm", "-f", "c1", "c2"],
-      [
-        "volume",
-        "ls",
-        "-q",
-        "--filter",
-        "label=com.docker.compose.project=kl_gone",
-        "--filter",
-        "label=dev.basaltbytes.oad=1",
-      ],
+      ["volume", "ls", "-q", "--filter", "label=com.docker.compose.project=kl_gone"],
       ["volume", "rm", "v1"],
+      ["network", "ls", "-q", "--filter", "label=com.docker.compose.project=kl_gone"],
+      ["network", "rm", "n1"],
     ]);
   });
 
@@ -173,41 +166,33 @@ describe("runPrune", () => {
     expect(report.removed).toEqual([{ composeProject: "kl_vanished", reason: "vanished" }]);
     expect(store.rows.size).toBe(0);
     // a manual `docker compose down` removes the containers (row turns
-    // vanished) but can leave labeled volumes behind — the sweep finds none
-    // here, so nothing is rm'ed
+    // vanished) but can leave labeled volumes/networks behind — the sweep
+    // finds none here, so nothing is rm'ed
     expect(recording.calls.map((c) => c.args)).toEqual([
       ["compose", "ls", "-a", "--format", "json"],
-      [
-        "ps",
-        "-aq",
-        "--filter",
-        "label=com.docker.compose.project=kl_vanished",
-        "--filter",
-        "label=dev.basaltbytes.oad=1",
-      ],
-      [
-        "volume",
-        "ls",
-        "-q",
-        "--filter",
-        "label=com.docker.compose.project=kl_vanished",
-        "--filter",
-        "label=dev.basaltbytes.oad=1",
-      ],
+      ["ps", "-aq", "--filter", "label=com.docker.compose.project=kl_vanished"],
+      ["volume", "ls", "-q", "--filter", "label=com.docker.compose.project=kl_vanished"],
+      ["network", "ls", "-q", "--filter", "label=com.docker.compose.project=kl_vanished"],
     ]);
   });
 
-  it("vanished rows with leftover labeled volumes get them removed", async () => {
+  it("vanished rows with leftover labeled resources get them removed", async () => {
     const { recording, run } = makeEnv({
       rows: [makeRow({ composeProject: "kl_vanished" })],
       composeLs: [],
       volumes: { kl_vanished: ["kl_vanished_db-data"] },
+      networks: { kl_vanished: ["kl_vanished_default"] },
     });
     await run(runPrune({ ...baseOptions, yes: true }));
     expect(recording.calls.map((c) => c.args)).toContainEqual([
       "volume",
       "rm",
       "kl_vanished_db-data",
+    ]);
+    expect(recording.calls.map((c) => c.args)).toContainEqual([
+      "network",
+      "rm",
+      "kl_vanished_default",
     ]);
   });
 

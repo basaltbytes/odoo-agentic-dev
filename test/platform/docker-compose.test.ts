@@ -283,11 +283,14 @@ describe("DockerComposeLive", () => {
     expect(error).toBeInstanceOf(ComposeCommandError);
   });
 
-  it("removeByLabel removes containers then volumes by compose-project and oad labels", async () => {
+  it("removeByLabel removes containers, volumes, and networks by compose project label", async () => {
     const { recording, run } = makeEnv((spec) => {
       if (spec.args[0] === "ps") return { exitCode: 0, stdout: "c1\nc2\n", stderr: "" };
       if (spec.args[0] === "volume" && spec.args[1] === "ls") {
         return { exitCode: 0, stdout: "v1\n", stderr: "" };
+      }
+      if (spec.args[0] === "network" && spec.args[1] === "ls") {
+        return { exitCode: 0, stdout: "n1\n", stderr: "" };
       }
       return undefined;
     });
@@ -298,25 +301,12 @@ describe("DockerComposeLive", () => {
       }),
     );
     expect(recording.calls.map((c) => c.args)).toEqual([
-      [
-        "ps",
-        "-aq",
-        "--filter",
-        "label=com.docker.compose.project=kl_gone",
-        "--filter",
-        "label=dev.basaltbytes.oad=1",
-      ],
+      ["ps", "-aq", "--filter", "label=com.docker.compose.project=kl_gone"],
       ["rm", "-f", "c1", "c2"],
-      [
-        "volume",
-        "ls",
-        "-q",
-        "--filter",
-        "label=com.docker.compose.project=kl_gone",
-        "--filter",
-        "label=dev.basaltbytes.oad=1",
-      ],
+      ["volume", "ls", "-q", "--filter", "label=com.docker.compose.project=kl_gone"],
       ["volume", "rm", "v1"],
+      ["network", "ls", "-q", "--filter", "label=com.docker.compose.project=kl_gone"],
+      ["network", "rm", "n1"],
     ]);
   });
 
@@ -328,7 +318,7 @@ describe("DockerComposeLive", () => {
         yield* dc.removeByLabel("kl_gone");
       }),
     );
-    expect(recording.calls.map((c) => c.args[0])).toEqual(["ps", "volume"]);
+    expect(recording.calls.map((c) => c.args[0])).toEqual(["ps", "volume", "network"]);
   });
 
   it("listLabeledContainers queries oad-labeled containers and dedupes per project", async () => {

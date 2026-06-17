@@ -108,7 +108,7 @@ export const runPrune = (
       // teardown order: docker resources first, then the row — failing midway
       // leaves the row behind for the next run instead of orphaning containers.
       // vanished rows are swept too: a manual `docker compose down` removes
-      // the containers but can leave labeled volumes behind (no-op otherwise)
+      // the containers but can leave labeled volumes/networks behind (no-op otherwise)
       yield* compose.removeByLabel(candidate.row.composeProject);
       yield* store.remove(candidate.row.composeProject);
       removed.push({ composeProject: candidate.row.composeProject, reason: candidate.reason });

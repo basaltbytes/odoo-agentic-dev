@@ -63,7 +63,7 @@ export interface DockerComposeApi {
   >;
   /**
    * Label-based teardown that works without the original compose file:
-   * `docker rm -f` every container of the project, then remove its volumes.
+   * `docker rm -f` every container of the Compose project, then remove its volumes and networks.
    */
   readonly removeByLabel: (composeProject: string) => Effect.Effect<void, ComposeCommandError>;
   /** Write the generated compose file (or resolve the project-supplied one). */
@@ -290,16 +290,13 @@ export const DockerComposeLive = Layer.effect(
 
     const removeByLabel = (composeProject: string): Effect.Effect<void, ComposeCommandError> =>
       Effect.gen(function* () {
-        const filters = [
-          "--filter",
-          `label=com.docker.compose.project=${composeProject}`,
-          "--filter",
-          "label=dev.basaltbytes.oad=1",
-        ];
+        const filters = ["--filter", `label=com.docker.compose.project=${composeProject}`];
         const ids = splitLines((yield* dockerRun(["ps", "-aq", ...filters])).stdout);
         if (ids.length > 0) yield* dockerRun(["rm", "-f", ...ids]);
         const volumes = splitLines((yield* dockerRun(["volume", "ls", "-q", ...filters])).stdout);
         if (volumes.length > 0) yield* dockerRun(["volume", "rm", ...volumes]);
+        const networks = splitLines((yield* dockerRun(["network", "ls", "-q", ...filters])).stdout);
+        if (networks.length > 0) yield* dockerRun(["network", "rm", ...networks]);
       });
 
     return {
