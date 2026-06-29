@@ -2,7 +2,7 @@ import { Console, Effect, Option } from "effect";
 import { Command, Flag } from "effect/unstable/cli";
 import type { OdooAgenticDevConfig } from "../core/project-recipe.js";
 import type { WorktreeContext } from "../core/worktree-context.js";
-import { assertSharedDatabaseAllowed } from "../core/safety.js";
+import { assertSharedDatabaseAllowed, isSharedDatabase } from "../core/safety.js";
 import { computeTemplateKey, decideResetPath, templateDbName } from "../core/environment.js";
 import type { ResetPath } from "../core/environment.js";
 import { computeTemplateInputHashForContext } from "../core/image-fingerprint.js";
@@ -116,6 +116,73 @@ export const runResetFlow = (
         yield* store.setTemplate(ctx.composeProjectName, null);
       }
       return path;
+    }),
+  );
+
+/** Outcome of the pre-test template freshness guard (see `ensureFreshTemplateForTests`). */
+export type TemplateGuardOutcome = "disabled" | "fresh" | "rebuilt" | "stale-shared";
+
+/**
+ * Make `oad test` run against a database that reflects the current code.
+ *
+ * `oad test` runs `--test-enable` against the live worktree database; it does
+ * not restore or rebuild on its own, and it only warns about a stale Docker
+ * *image*, never a stale database *template*. So after a change that is applied
+ * at database init — seeded demo/data, security, views, i18n, manifests — the
+ * template snapshot is stale and the suite silently replays the old seed (false
+ * passes and failures). This reuses the same staleness decision as `reset-db`
+ * (`decideResetPath` over the template input hash) and rebuilds the template
+ * before the suite runs when it is stale or missing; when it is fresh it is a
+ * no-op, so the common fast-iteration path keeps its speed.
+ *
+ * Note: the template hash deliberately excludes model `*.py`, so a change to a
+ * field's storage/compute that touches no init-time file is not detected here —
+ * run `oad reset-db` by hand for that case.
+ *
+ * The shared database is never rebuilt (that has no reset guard); a stale shared
+ * template only warns, mirroring `oad reset-db`'s shared-database protection.
+ */
+export const ensureFreshTemplateForTests = (
+  recipe: OdooAgenticDevConfig,
+  ctx: WorktreeContext,
+  options?: { readonly say?: ((line: string) => Effect.Effect<void>) | undefined },
+): Effect.Effect<TemplateGuardOutcome, RuntimeError, OdooLifecycleApi | StateStoreApi> =>
+  withStateDbRoot(
+    ctx.rootDir,
+    Effect.gen(function* () {
+      const say = options?.say ?? Console.log;
+      if (!recipe.database.template) return "disabled";
+      const store = yield* StateStore;
+      const expectedKey = yield* computeTemplateKeyForContext(recipe, ctx);
+      const row = yield* store.get(ctx.composeProjectName);
+      const path = decideResetPath({
+        row,
+        expectedKey,
+        databaseName: ctx.databaseName,
+        noTemplate: false,
+        refreshTemplate: false,
+        hasOverrides: false,
+        templateEnabled: recipe.database.template,
+      });
+      if (path === "restore") return "fresh";
+      if (isSharedDatabase(ctx.databaseName, recipe.project.sharedDatabase)) {
+        yield* say(
+          "warning: the database template is stale but the database is shared; not rebuilding it. " +
+            "Test results may not reflect your init-time changes (demo/data/security/views/i18n). " +
+            "Run the suite on a worktree, or `oad reset-db --allow-shared` deliberately.",
+        );
+        return "stale-shared";
+      }
+      yield* say("Database template is stale or missing; rebuilding it before the test suite…");
+      yield* runResetFlow(recipe, ctx, {
+        noTemplate: false,
+        refreshTemplate: false,
+        build: false,
+        modules: undefined,
+        withoutDemo: undefined,
+        say,
+      });
+      return "rebuilt";
     }),
   );
 

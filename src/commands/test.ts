@@ -11,6 +11,7 @@ import {
   reportImageFreshness,
   warnIfImageStale,
 } from "./state-hooks.js";
+import { ensureFreshTemplateForTests } from "./reset-db.js";
 import { withJsonReport } from "./json-report.js";
 
 export const resolveTestOptions = (
@@ -169,6 +170,12 @@ export const testCommand = Command.make(
         if (flags.build) {
           yield* buildImageAndRecord(recipe, ctx, report);
         }
+        // Rebuild a stale database template before the suite so tests reflect the
+        // current code's init-time data, not a frozen snapshot. No-op when fresh.
+        const templateGuard = yield* ensureFreshTemplateForTests(recipe, ctx, {
+          say: report.say,
+        });
+        yield* report.setExtra("templateGuard", templateGuard);
         const { exitCode, stderr, stderrTail, stdout, stdoutTail } = yield* lifecycle.runTests(
           recipe,
           ctx,

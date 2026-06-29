@@ -4,7 +4,11 @@ import { join } from "node:path";
 import { afterAll } from "vitest";
 import { describe, expect, it, vi } from "vitest";
 import { Effect, Layer } from "effect";
-import { computeTemplateKeyForContext, runResetFlow } from "../../src/commands/reset-db.js";
+import {
+  computeTemplateKeyForContext,
+  ensureFreshTemplateForTests,
+  runResetFlow,
+} from "../../src/commands/reset-db.js";
 import type { ResetFlowOptions } from "../../src/commands/reset-db.js";
 import { rowFromContext } from "../../src/commands/state-hooks.js";
 import { OdooLifecycle } from "../../src/platform/odoo-lifecycle.js";
@@ -173,6 +177,72 @@ describe("runResetFlow", () => {
       templateDb: null,
       templateKey: null,
     });
+  });
+});
+
+describe("ensureFreshTemplateForTests", () => {
+  const runGuard = (
+    store: ReturnType<typeof makeFakeStateStore>,
+    lifecycle: ReturnType<typeof makeFakeLifecycle>,
+    targetRecipe = recipe,
+    targetCtx = ctx,
+  ) =>
+    runWith(Layer.merge(store.layer, lifecycle.layer))(
+      ensureFreshTemplateForTests(targetRecipe, targetCtx),
+    );
+
+  it("is a no-op when the template key matches (fresh)", async () => {
+    const store = seedRow({ databaseName: tplName, key: expectedKey });
+    const lifecycle = makeFakeLifecycle();
+    await expect(runGuard(store, lifecycle)).resolves.toBe("fresh");
+    expect(lifecycle.calls).toEqual([]);
+  });
+
+  it("rebuilds the template when the recorded key is stale", async () => {
+    const store = seedRow({ databaseName: tplName, key: "stale123" });
+    const lifecycle = makeFakeLifecycle();
+    await expect(runGuard(store, lifecycle)).resolves.toBe("rebuilt");
+    expect(lifecycle.calls).toEqual(["resetDatabase", "runPostInitHooks", "snapshotTemplate"]);
+    expect(store.rows.get(ctx.composeProjectName)?.templateKey).toBe(expectedKey);
+  });
+
+  it("rebuilds when no template snapshot exists yet", async () => {
+    const store = seedRow(null);
+    const lifecycle = makeFakeLifecycle();
+    await expect(runGuard(store, lifecycle)).resolves.toBe("rebuilt");
+    expect(lifecycle.calls).toEqual(["resetDatabase", "runPostInitHooks", "snapshotTemplate"]);
+  });
+
+  it("does nothing when templates are disabled in the recipe", async () => {
+    const store = seedRow(null);
+    const lifecycle = makeFakeLifecycle();
+    await expect(runGuard(store, lifecycle, recipeWithoutTemplate)).resolves.toBe("disabled");
+    expect(lifecycle.calls).toEqual([]);
+  });
+
+  it("never rebuilds a shared database — it only warns", async () => {
+    const sharedRecipe = makeRecipe({
+      project: { id: "kl", dbPrefix: "kl", sharedDatabase: ctx.databaseName },
+      odoo: { version: "18.0", addons: [{ host: "addons", container: "/mnt/c" }] },
+      database: {
+        initialModules: ["KL_setup"],
+        postInit: [{ type: "odoo-shell-inline", code: "x" }],
+      },
+    });
+    const sharedCtx = makeCtx(sharedRecipe, "feature/z");
+    const store = makeFakeStateStore();
+    store.rows.set(sharedCtx.composeProjectName, {
+      ...rowFromContext(sharedRecipe, sharedCtx),
+      createdAt: "2026-06-01T00:00:00.000Z",
+      lastUsedAt: "2026-06-01T00:00:00.000Z",
+      templateDb: templateDbName(sharedCtx.databaseName),
+      templateKey: "stale123",
+      imageKey: null,
+      imageBuiltAt: null,
+    });
+    const lifecycle = makeFakeLifecycle();
+    await expect(runGuard(store, lifecycle, sharedRecipe, sharedCtx)).resolves.toBe("stale-shared");
+    expect(lifecycle.calls).toEqual([]);
   });
 });
 
