@@ -1,5 +1,6 @@
 import { Effect } from "effect";
 import { Command, Flag } from "effect/unstable/cli";
+import { containerAddonsPath } from "../core/command-plan.js";
 import type { OdooAgenticDevConfig } from "../core/project-recipe.js";
 import type { WorktreeContext } from "../core/worktree-context.js";
 import type { RuntimeError } from "../errors/errors.js";
@@ -11,7 +12,14 @@ import type { StateStoreApi } from "../platform/state-store.js";
 import { recordEnvironment } from "./state-hooks.js";
 import { resolveContext } from "./resolve-context.js";
 
-/** `compose run` (not exec) so the session gets its own container and TTY. */
+/**
+ * `compose run` (not exec) so the session gets its own container and TTY.
+ * `run` replaces the service `command:`, so `--addons-path` must be repeated
+ * here or the shell falls back to the image's odoo.conf and skips every
+ * mounted addon; `--no-http` keeps the injected ODOO_HTTP_PORT context env
+ * from rebinding the shell container's HTTP server (Odoo 19+ reads ODOO_*
+ * env vars as config).
+ */
 export const buildShellArgs = (
   recipe: OdooAgenticDevConfig,
   ctx: WorktreeContext,
@@ -23,6 +31,8 @@ export const buildShellArgs = (
   "shell",
   "-d",
   ctx.databaseName,
+  `--addons-path=${containerAddonsPath(recipe)}`,
+  "--no-http",
 ];
 
 /**

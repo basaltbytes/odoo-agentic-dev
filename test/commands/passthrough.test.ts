@@ -70,6 +70,8 @@ describe("argv builders", () => {
       "shell",
       "-d",
       ctx.databaseName,
+      "--addons-path=/usr/lib/python3/dist-packages/odoo/addons,/mnt/c",
+      "--no-http",
     ]);
   });
 
@@ -136,6 +138,8 @@ describe("runInteractivePassthrough", () => {
         "shell",
         "-d",
         ctx.databaseName,
+        "--addons-path=/usr/lib/python3/dist-packages/odoo/addons,/mnt/c",
+        "--no-http",
       ],
       cwd: rootDir,
     });
