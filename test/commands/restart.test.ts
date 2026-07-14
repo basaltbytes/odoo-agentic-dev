@@ -6,6 +6,7 @@ import { Effect, Layer } from "effect";
 import { buildRestartPlan, guardRestartJson, runRestart } from "../../src/commands/restart.js";
 import { withJsonReport } from "../../src/commands/json-report.js";
 import { DockerComposeLive } from "../../src/platform/docker-compose.js";
+import { OdooLifecycleLive } from "../../src/platform/odoo-lifecycle.js";
 import { UsageError } from "../../src/errors/errors.js";
 import {
   makeFakePortProbe,
@@ -41,17 +42,16 @@ describe("buildRestartPlan", () => {
   it("restarts Odoo without rebuilding by default", () => {
     expect(buildRestartPlan(recipe, { rebuild: false, logs: false })).toEqual({
       ensureDbArgs: ["up", "-d", "db"],
-      buildArgs: null,
       removeOdooArgs: null,
       restartOdooArgs: ["restart", "odoo"],
       logsArgs: null,
     });
   });
 
-  it("--rebuild adds build/remove/recreate steps, --logs follows logs", () => {
+  it("--rebuild adds remove/recreate steps, --logs follows logs", () => {
+    // the image build itself goes through the shared ensureImageBuilt gate
     expect(buildRestartPlan(recipe, { rebuild: true, logs: true })).toEqual({
       ensureDbArgs: ["up", "-d", "db"],
-      buildArgs: ["build", "odoo"],
       removeOdooArgs: ["rm", "-sf", "odoo"],
       restartOdooArgs: ["up", "-d", "odoo"],
       logsArgs: ["logs", "-f", "odoo"],
@@ -113,9 +113,13 @@ describe("runRestart", () => {
         imageBuiltAt: null,
       },
     ]);
-    const layer = Layer.mergeAll(
+    const composeLayer = Layer.merge(
       Layer.provide(DockerComposeLive, recording.layer),
       recording.layer,
+    );
+    const layer = Layer.mergeAll(
+      composeLayer,
+      Layer.provide(OdooLifecycleLive, composeLayer),
       store.layer,
       makeFakePortProbe(new Set()),
     );
@@ -164,8 +168,10 @@ describe("runRestart", () => {
     await run(runRestart(recipe, ctx, { rebuild: true, logs: false }, report));
     const calls = joinedCalls(recording.calls);
     const indexOf = (needle: string) => calls.findIndex((c) => c.includes(needle));
-    expect(indexOf("build odoo")).toBeGreaterThan(indexOf("pg_isready"));
-    expect(indexOf("rm -sf odoo")).toBeGreaterThan(indexOf("build odoo"));
+    // the image gate builds first, then the db comes up, then Odoo is recreated
+    expect(indexOf("build odoo")).toBeGreaterThanOrEqual(0);
+    expect(indexOf("pg_isready")).toBeGreaterThan(indexOf("build odoo"));
+    expect(indexOf("rm -sf odoo")).toBeGreaterThan(indexOf("pg_isready"));
     expect(indexOf("up -d odoo")).toBeGreaterThan(indexOf("rm -sf odoo"));
     const row = store.rows.get(ctx.composeProjectName);
     expect(row?.templateDb).toBe(`${ctx.databaseName}__tpl`);

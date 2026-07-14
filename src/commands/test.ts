@@ -5,12 +5,7 @@ import type { OdooAgenticDevConfig } from "../core/project-recipe.js";
 import type { OdooTestOptions } from "../core/command-plan.js";
 import { OdooLifecycle } from "../platform/odoo-lifecycle.js";
 import { resolveContext } from "./resolve-context.js";
-import {
-  buildImageAndRecord,
-  recordEnvironment,
-  reportImageFreshness,
-  warnIfImageStale,
-} from "./state-hooks.js";
+import { ensureImageBuilt, recordEnvironment } from "./state-hooks.js";
 import { ensureFreshTemplateForTests } from "./reset-db.js";
 import { withJsonReport } from "./json-report.js";
 
@@ -149,9 +144,7 @@ export const testCommand = Command.make(
         const { ctx, recipe } = yield* resolveContext(flags.config);
         yield* report.setContext(ctx);
         yield* recordEnvironment(recipe, ctx);
-        if (!flags.build) {
-          yield* reportImageFreshness(report, yield* warnIfImageStale(recipe, ctx, report.say));
-        }
+        yield* ensureImageBuilt(recipe, ctx, { force: flags.build }, report);
         if (flags.includeDemo) {
           yield* report.say(
             "note: --include-demo has no effect in v1; set database.withoutDemo: false and reset the database instead",
@@ -166,10 +159,8 @@ export const testCommand = Command.make(
           build: flags.build,
         });
         const lifecycle = yield* OdooLifecycle;
-        const runOptions = flags.build ? { ...options, build: false } : options;
-        if (flags.build) {
-          yield* buildImageAndRecord(recipe, ctx, report);
-        }
+        // the image gate above already built when needed
+        const runOptions = { ...options, build: false };
         // Rebuild a stale database template before the suite so tests reflect the
         // current code's init-time data, not a frozen snapshot. No-op when fresh.
         const templateGuard = yield* ensureFreshTemplateForTests(recipe, ctx, {

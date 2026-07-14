@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { Effect, Layer } from "effect";
 import {
+  assessNetworkPools,
   collectDoctorChecks,
   composeVersionOk,
   detectWsl,
@@ -169,6 +170,24 @@ describe("pure helpers", () => {
     expect(detectWsl(null)).toBe(false);
     expect(detectWsl("Linux version 5.15.90.1-microsoft-standard-WSL2")).toBe(true);
     expect(detectWsl("Linux version 6.1.0-13-amd64 (debian)")).toBe(false);
+  });
+
+  it("assessNetworkPools counts only 172.16/12 allocations and warns near exhaustion", () => {
+    const inRange = (n: number) => Array.from({ length: n }, (_, i) => `172.${17 + i}.0.0/16`);
+    // widened pools (10.x) and the 192.168 fallback never count against the constrained pool
+    const elsewhere = ["10.201.5.0/24", "192.168.16.0/20", "fd00::/64"];
+    expect(assessNetworkPools([...inRange(3), ...elsewhere])).toEqual({
+      ok: true,
+      detail: "3 of ~15 default 172.16/12 pool slots allocated",
+    });
+    const nearFull = assessNetworkPools(inRange(10));
+    expect(nearFull.ok).toBe(false);
+    expect(nearFull.detail).toContain("10 of ~15");
+    expect(nearFull.detail).toContain("default-address-pools");
+    expect(assessNetworkPools([])).toEqual({
+      ok: true,
+      detail: "0 of ~15 default 172.16/12 pool slots allocated",
+    });
   });
 
   it("formatDoctorReport renders check marks and failure severity", () => {

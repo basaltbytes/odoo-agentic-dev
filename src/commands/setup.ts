@@ -14,12 +14,7 @@ import type { StateStoreApi } from "../platform/state-store.js";
 import type { GitApi } from "../platform/git.js";
 import { resolveContext } from "./resolve-context.js";
 import { computeTemplateKeyForContext, guardReset, runResetFlow } from "./reset-db.js";
-import {
-  recordEnvironment,
-  recordImageBuild,
-  reportImageFreshness,
-  warnOrAutoClean,
-} from "./state-hooks.js";
+import { ensureImageBuilt, recordEnvironment, warnOrAutoClean } from "./state-hooks.js";
 import { resetPathActions, resetPathMode, withJsonReport } from "./json-report.js";
 import type { CommandReporter } from "./json-report.js";
 import { buildInfoText } from "./info.js";
@@ -59,6 +54,7 @@ export type SetupFlags = {
   readonly allowShared: boolean;
   readonly noTemplate: boolean;
   readonly refreshTemplate: boolean;
+  readonly build: boolean;
 };
 
 /** Everything `setup` does after the context resolves (extracted for tests). */
@@ -104,10 +100,7 @@ export const runSetup = (
           });
           break;
         case "build": {
-          yield* report.action("build-image");
-          const ref = yield* compose.prepareComposeFile(recipe, ctx);
-          yield* compose.stream(ref, ["build", recipe.odoo.serviceName]);
-          yield* reportImageFreshness(report, yield* recordImageBuild(recipe, ctx));
+          yield* ensureImageBuilt(recipe, ctx, { force: flags.build }, report);
           break;
         }
         case "reset-db": {
@@ -148,6 +141,9 @@ export const setupCommand = Command.make(
     ),
     refreshTemplate: Flag.boolean("refresh-template").pipe(
       Flag.withDescription("full init and take a fresh template snapshot"),
+    ),
+    build: Flag.boolean("build").pipe(
+      Flag.withDescription("force the image build even when inputs are unchanged"),
     ),
     json: Flag.boolean("json").pipe(
       Flag.withDescription("suppress decorative output; print one final JSON report line"),

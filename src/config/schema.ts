@@ -289,7 +289,9 @@ export const normalizeConfig = (
     companionApps: input.companionApps ?? [],
     cleanup: {
       maxAgeDays: input.cleanup?.maxAgeDays ?? 30,
-      auto: input.cleanup?.auto ?? false,
+      // default on: agent workflows mint environments far faster than anyone
+      // remembers to prune, and auto-clean never touches shared or current ones
+      auto: input.cleanup?.auto ?? true,
     },
   });
 };

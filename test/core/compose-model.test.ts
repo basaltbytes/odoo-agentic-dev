@@ -51,6 +51,30 @@ describe("buildComposeModel", () => {
     });
   });
 
+  it("names the built image from options.imageReference for managed builds", () => {
+    const built = makeRecipe({
+      project: { id: "x", dbPrefix: "x" },
+      odoo: {
+        version: "18.0",
+        build: { pipPackages: ["requests"] },
+        addons: [{ host: "addons", container: "/mnt/c" }],
+      },
+    });
+    const builtCtx = makeCtx(built, "b");
+    const withRef = buildComposeModel(built, builtCtx, { imageReference: "oad-x-odoo:abc123" });
+    expect((withRef.services["odoo"] as Record<string, unknown>)["image"]).toBe(
+      "oad-x-odoo:abc123",
+    );
+    // without the option (eject/portable callers) no image name is emitted
+    const withoutRef = buildComposeModel(built, builtCtx);
+    expect((withoutRef.services["odoo"] as Record<string, unknown>)["image"]).toBeUndefined();
+    // an explicit imageName always wins over the derived reference
+    const withName = buildComposeModel(recipe, ctx, { imageReference: "oad-x-odoo:abc123" });
+    expect((withName.services["odoo"] as Record<string, unknown>)["image"]).toBe(
+      "krisslaure-odoo-agentic-dev",
+    );
+  });
+
   it("falls back to the official image without a dockerfile", () => {
     const plain = makeRecipe({
       project: { id: "x", dbPrefix: "x" },

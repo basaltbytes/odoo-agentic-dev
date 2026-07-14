@@ -283,6 +283,7 @@ export const runWorktreeCreate = (
           allowShared: false,
           noTemplate: false,
           refreshTemplate: false,
+          build: false,
         },
         reporter,
       );

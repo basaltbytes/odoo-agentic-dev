@@ -56,11 +56,18 @@ export const buildOadLabels = (
  * worktree-independent file the `eject` command can write into a repo.
  * `options.dockerfilePath`, when set, overrides whatever `build.dockerfile`
  * path would otherwise be emitted (eject points it at the ejected Dockerfile).
+ * `options.imageReference` names the built image when the recipe does not
+ * (the fingerprint-keyed shared tag for managed builds); an explicit
+ * `odoo.imageName` always wins.
  */
 export const buildComposeModel = (
   recipe: OdooAgenticDevConfig,
   ctx: WorktreeContext,
-  options?: { readonly portable?: boolean; readonly dockerfilePath?: string },
+  options?: {
+    readonly portable?: boolean;
+    readonly dockerfilePath?: string;
+    readonly imageReference?: string;
+  },
 ): ComposeModel => {
   const portable = options?.portable === true;
   const dbService = recipe.odoo.databaseServiceName;
@@ -81,11 +88,12 @@ export const buildComposeModel = (
     options?.dockerfilePath ??
     recipe.odoo.dockerfile ??
     (recipe.odoo.build !== null ? GENERATED_DOCKERFILE_RELATIVE_PATH : null);
+  const builtImage = recipe.odoo.imageName ?? options?.imageReference ?? null;
   const imageOrBuild: Record<string, unknown> =
     dockerfile !== null
       ? {
           build: { context: ".", dockerfile },
-          ...(recipe.odoo.imageName !== null ? { image: recipe.odoo.imageName } : {}),
+          ...(builtImage !== null ? { image: builtImage } : {}),
         }
       : { image: recipe.odoo.imageName ?? `odoo:${recipe.odoo.version}` };
 

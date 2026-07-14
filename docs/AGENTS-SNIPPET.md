@@ -17,17 +17,16 @@ same database, same ports, on every machine.
   (browser URL), and every env var the tooling derives.
 - `oad setup` — prepare a fresh worktree end to end (deps, Docker image,
   database init, optional template snapshot).
-- `oad up --detach` / `down` — start/stop the stack (`up` rebuilds by
-  default; pass `--no-build` only when the image is known fresh).
+- `oad up --detach` / `down` — start/stop the stack (`up` builds only when
+  the image is missing or its tracked inputs changed; worktrees share one
+  fingerprint-keyed image per project).
 - `oad restart` — fast Odoo process restart when the server hangs; use
   `oad restart --rebuild` after changing image inputs.
 - `oad reset-db --json` — recreate the database (fast template restore when
   the recipe hasn't changed).
 - `oad update <modules>` / `test --tags <tags>` — module upgrade / Odoo test
-  runs against this worktree's database.
-- Add `--build` to `reset-db`, `update`, or `test` after changing `odoo.build`,
-  `odoo.dockerfile`, or files copied into the Odoo image. These commands warn
-  when tracked image inputs look stale.
+  runs against this worktree's database. Like `up`, they build first only
+  when the image is missing or stale; `--build` forces it.
 - `oad run -- <cmd>` — run any host command with the context env injected
   (`ODOO_DATABASE`, `ODOO_BASE_URL`, companion app ports). Never hand-assemble
   these variables.

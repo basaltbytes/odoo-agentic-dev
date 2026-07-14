@@ -12,12 +12,7 @@ import { StateStore } from "../platform/state-store.js";
 import type { StateStoreApi } from "../platform/state-store.js";
 import { withStateDbRoot } from "../platform/state-store.js";
 import { resolveContext } from "./resolve-context.js";
-import {
-  buildImageAndRecord,
-  recordEnvironment,
-  reportImageFreshness,
-  warnIfImageStale,
-} from "./state-hooks.js";
+import { ensureImageBuilt, recordEnvironment } from "./state-hooks.js";
 import { resetPathActions, resetPathMode, withJsonReport } from "./json-report.js";
 import type { RuntimeError, SharedDatabaseProtectionError } from "../errors/errors.js";
 
@@ -221,11 +216,7 @@ export const resetDbCommand = Command.make(
             : undefined;
         yield* guardReset(recipe, ctx, flags.allowShared, { databaseExists });
         yield* recordEnvironment(recipe, ctx);
-        if (!flags.build) {
-          yield* reportImageFreshness(report, yield* warnIfImageStale(recipe, ctx, report.say));
-        } else {
-          yield* buildImageAndRecord(recipe, ctx, report);
-        }
+        yield* ensureImageBuilt(recipe, ctx, { force: flags.build }, report);
         const path = yield* runResetFlow(recipe, ctx, {
           noTemplate: flags.noTemplate,
           refreshTemplate: flags.refreshTemplate,

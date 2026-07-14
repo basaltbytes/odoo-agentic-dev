@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { Context, Duration, Effect, Layer } from "effect";
 import { ComposeCommandError, DockerUnavailableError, tail } from "../errors/errors.js";
@@ -9,7 +9,17 @@ import {
   GENERATED_COMPOSE_RELATIVE_PATH,
   renderComposeYaml,
 } from "../core/compose-model.js";
-import { GENERATED_DOCKERFILE_RELATIVE_PATH, renderDockerfile } from "../core/dockerfile-model.js";
+import {
+  GENERATED_DOCKERFILE_RELATIVE_PATH,
+  GENERATED_DOCKERIGNORE_RELATIVE_PATH,
+  renderDockerfile,
+  renderDockerignore,
+} from "../core/dockerfile-model.js";
+import {
+  computeImageKeyForContext,
+  imageReference,
+  usesKeyedImage,
+} from "../core/image-fingerprint.js";
 import { CommandRunner } from "./command-runner.js";
 import type { ExecResult } from "./command-runner.js";
 
@@ -63,9 +73,25 @@ export interface DockerComposeApi {
   >;
   /**
    * Label-based teardown that works without the original compose file:
-   * `docker rm -f` every container of the Compose project, then remove its volumes and networks.
+   * `docker rm -f` every container of the Compose project, then remove its
+   * volumes, networks, and legacy per-worktree images (`<composeProject>-*`).
    */
   readonly removeByLabel: (composeProject: string) => Effect.Effect<void, ComposeCommandError>;
+  /** `docker image inspect` probe: does this exact reference exist locally? */
+  readonly imageExists: (reference: string) => Effect.Effect<boolean, ComposeCommandError>;
+  /** All local `repo:tag` references under one repository (dangling excluded). */
+  readonly listImageTags: (
+    repository: string,
+  ) => Effect.Effect<ReadonlyArray<string>, ComposeCommandError>;
+  /** Force-remove image references; running containers keep theirs (that removal fails). */
+  readonly removeImages: (
+    references: ReadonlyArray<string>,
+  ) => Effect.Effect<void, ComposeCommandError>;
+  /**
+   * `docker builder prune --force --keep-storage <size>`: drop unused BuildKit
+   * cache above the size floor. Returns docker's summary line (reclaimed space).
+   */
+  readonly pruneBuildCache: (keepStorage: string) => Effect.Effect<string, ComposeCommandError>;
   /** Write the generated compose file (or resolve the project-supplied one). */
   readonly prepareComposeFile: (
     recipe: OdooAgenticDevConfig,
@@ -172,6 +198,41 @@ const splitLines = (stdout: string): Array<string> =>
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter((line) => line.length > 0);
+
+/**
+ * The image fingerprint reads every build input file, and prepareComposeFile
+ * runs several times per command (once per lifecycle step) — memoize per
+ * context. A context is built once per CLI invocation with one recipe, so the
+ * context is a sufficient key and the cache dies with the process.
+ */
+const imageKeyCache = new WeakMap<WorktreeContext, string>();
+const cachedImageKey = (
+  recipe: OdooAgenticDevConfig,
+  ctx: WorktreeContext,
+): Effect.Effect<string, ComposeCommandError> => {
+  const cached = imageKeyCache.get(ctx);
+  if (cached !== undefined) return Effect.succeed(cached);
+  return computeImageKeyForContext(recipe, ctx).pipe(
+    Effect.mapError(
+      (error) =>
+        new ComposeCommandError({ args: ["<prepare>"], exitCode: -1, stderrTail: error.message }),
+    ),
+    Effect.flatMap((key) =>
+      key === null
+        ? Effect.fail(
+            new ComposeCommandError({
+              args: ["<prepare>"],
+              exitCode: -1,
+              stderrTail: "no managed image inputs to fingerprint (unexpected for a build recipe)",
+            }),
+          )
+        : Effect.sync(() => {
+            imageKeyCache.set(ctx, key);
+            return key;
+          }),
+    ),
+  );
+};
 
 export const DockerComposeLive = Layer.effect(
   DockerCompose,
@@ -288,6 +349,38 @@ export const DockerComposeLive = Layer.effect(
       return dockerRun(argv).pipe(Effect.flatMap(parseWith(argv, parseLabeledPs)));
     };
 
+    const listImageTags = (
+      repository: string,
+    ): Effect.Effect<ReadonlyArray<string>, ComposeCommandError> =>
+      dockerRun(["image", "ls", repository, "--format", "{{.Repository}}:{{.Tag}}"]).pipe(
+        Effect.map((result) => splitLines(result.stdout).filter((ref) => !ref.endsWith(":<none>"))),
+      );
+
+    const removeImages = (
+      references: ReadonlyArray<string>,
+    ): Effect.Effect<void, ComposeCommandError> =>
+      references.length === 0
+        ? Effect.void
+        : dockerRun(["image", "rm", "-f", ...references]).pipe(Effect.asVoid);
+
+    const pruneBuildCache = (keepStorage: string): Effect.Effect<string, ComposeCommandError> =>
+      dockerRun(["builder", "prune", "--force", "--keep-storage", keepStorage]).pipe(
+        Effect.map(
+          (result) =>
+            result.stdout
+              .split(/\r?\n/)
+              .map((line) => line.trim())
+              .filter((line) => line.length > 0)
+              .at(-1) ?? "done",
+        ),
+      );
+
+    const imageExists = (reference: string): Effect.Effect<boolean, ComposeCommandError> =>
+      runner.run({ command: "docker", args: ["image", "inspect", reference] }).pipe(
+        Effect.map((result) => result.exitCode === 0),
+        Effect.mapError(toComposeError(["image", "inspect", reference])),
+      );
+
     const removeByLabel = (composeProject: string): Effect.Effect<void, ComposeCommandError> =>
       Effect.gen(function* () {
         const filters = ["--filter", `label=com.docker.compose.project=${composeProject}`];
@@ -297,6 +390,14 @@ export const DockerComposeLive = Layer.effect(
         if (volumes.length > 0) yield* dockerRun(["volume", "rm", ...volumes]);
         const networks = splitLines((yield* dockerRun(["network", "ls", "-q", ...filters])).stdout);
         if (networks.length > 0) yield* dockerRun(["network", "rm", ...networks]);
+        // only compose's default per-worktree naming (`<composeProject>-<service>`):
+        // shared fingerprint-keyed oad images carry the label of whichever
+        // worktree built them first and must survive their builder's teardown
+        const images = splitLines(
+          (yield* dockerRun(["image", "ls", ...filters, "--format", "{{.Repository}}:{{.Tag}}"]))
+            .stdout,
+        ).filter((ref) => ref.startsWith(`${composeProject}-`));
+        yield* removeImages(images);
       });
 
     return {
@@ -324,6 +425,12 @@ export const DockerComposeLive = Layer.effect(
                 join(ctx.rootDir, GENERATED_DOCKERFILE_RELATIVE_PATH),
                 renderDockerfile(recipe.odoo.version, recipe.odoo.build),
               );
+              const ignore = renderDockerignore(recipe.odoo.build);
+              const ignorePath = join(ctx.rootDir, GENERATED_DOCKERIGNORE_RELATIVE_PATH);
+              // a stale allowlist from a previous config must not linger: it
+              // would hide paths the current Dockerfile COPYs
+              if (ignore !== null) writeFileSync(ignorePath, ignore);
+              else rmSync(ignorePath, { force: true });
             }
           };
           if (recipe.compose.file !== null) {
@@ -349,11 +456,19 @@ export const DockerComposeLive = Layer.effect(
               env: ctx.env,
             };
           }
+          const ref = usesKeyedImage(recipe)
+            ? imageReference(recipe, yield* cachedImageKey(recipe, ctx))
+            : undefined;
           const file = join(ctx.rootDir, GENERATED_COMPOSE_RELATIVE_PATH);
           yield* Effect.try({
             try: () => {
               mkdirSync(dirname(file), { recursive: true });
-              writeFileSync(file, renderComposeYaml(buildComposeModel(recipe, ctx)));
+              writeFileSync(
+                file,
+                renderComposeYaml(
+                  buildComposeModel(recipe, ctx, ref === undefined ? {} : { imageReference: ref }),
+                ),
+              );
               writeGeneratedDockerfile();
             },
             catch: (cause) =>
@@ -374,6 +489,10 @@ export const DockerComposeLive = Layer.effect(
       listProjects,
       listLabeledContainers,
       removeByLabel,
+      imageExists,
+      listImageTags,
+      removeImages,
+      pruneBuildCache,
       run,
       tryRun,
 

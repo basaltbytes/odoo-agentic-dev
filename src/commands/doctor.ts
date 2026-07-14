@@ -74,6 +74,33 @@ export const composeVersionOk = (stdout: string): boolean => {
 export const detectWsl = (procVersion: string | null): boolean =>
   procVersion !== null && procVersion.toLowerCase().includes("microsoft");
 
+const CONSTRAINED_POOL_SUBNET = /^172\.(1[6-9]|2[0-9]|3[01])\.\d{1,3}\.\d{1,3}\/\d{1,2}$/;
+
+/**
+ * Docker's stock daemon carves local bridge networks out of two pools:
+ * fifteen /16 blocks in 172.16.0.0/12 (docker0 included) and sixteen /20
+ * blocks in 192.168.0.0/16. One compose project per worktree takes one /16,
+ * so the first pool exhausts around 15 live environments with "could not find
+ * an available, non-overlapping IPv4 address pool". This counts allocations
+ * inside 172.16.0.0/12 only — hosts with a widened `default-address-pools`
+ * allocate elsewhere and naturally stop matching.
+ */
+export const assessNetworkPools = (
+  subnets: ReadonlyArray<string>,
+): { readonly ok: boolean; readonly detail: string } => {
+  const constrained = subnets.filter((subnet) =>
+    CONSTRAINED_POOL_SUBNET.test(subnet.trim()),
+  ).length;
+  return constrained < 10
+    ? { ok: true, detail: `${constrained} of ~15 default 172.16/12 pool slots allocated` }
+    : {
+        ok: false,
+        detail:
+          `${constrained} of ~15 default 172.16/12 pool slots allocated — nearing "no available, non-overlapping IPv4 address pool". ` +
+          'Run `oad prune --yes` (and `oad down` idle stacks), or widen the pool in Docker daemon settings: "default-address-pools": [{"base":"10.201.0.0/16","size":24}]',
+      };
+};
+
 /** Total: /proc/version is absent on non-Linux hosts, which reads as null. */
 const readProcVersion = (): string | null => {
   try {
@@ -174,6 +201,36 @@ export const collectDoctorChecks = (
       hard: true,
       detail: `node ${process.versions.node} (need ${NODE_VERSION_REQUIREMENT})`,
     });
+
+    if (dockerVersion.exitCode === 0) {
+      const networkIds = yield* exec("docker", ["network", "ls", "-q"]);
+      const ids = networkIds.stdout
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0);
+      const inspected =
+        networkIds.exitCode === 0 && ids.length > 0
+          ? yield* exec("docker", [
+              "network",
+              "inspect",
+              ...ids,
+              "--format",
+              "{{range .IPAM.Config}}{{.Subnet}} {{end}}",
+            ])
+          : { exitCode: 0, stdout: "", stderr: "" };
+      const pools =
+        networkIds.exitCode === 0 && inspected.exitCode === 0
+          ? assessNetworkPools(inspected.stdout.split(/\s+/).filter((s) => s.length > 0))
+          : { ok: true, detail: "skipped (network inspection failed)" };
+      checks.push({ name: "network-pools", hard: false, ...pools });
+    } else {
+      checks.push({
+        name: "network-pools",
+        ok: true,
+        hard: false,
+        detail: "skipped (docker unavailable)",
+      });
+    }
 
     const config = yield* loadRecipe({
       cwd: process.cwd(),

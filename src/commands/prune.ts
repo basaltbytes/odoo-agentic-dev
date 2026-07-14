@@ -116,13 +116,45 @@ export const runPrune = (
     return { candidates, removed };
   });
 
+/** Result of the optional `--build-cache` step; `reclaimed` is null on a dry run. */
+export type BuildCacheOutcome = {
+  readonly keepStorage: string;
+  readonly reclaimed: string | null;
+};
+
+const KEEP_STORAGE_PATTERN = /^\d+(\.\d+)?\s*([kmgt]i?b|b)?$/i;
+
+/** `--keep-storage` only modifies `--build-cache`, and docker must parse the size. */
+export const guardBuildCacheFlags = (flags: {
+  readonly buildCache: boolean;
+  readonly keepStorage: string | undefined;
+}): Effect.Effect<void, UsageError> => {
+  if (flags.keepStorage !== undefined && !flags.buildCache) {
+    return Effect.fail(new UsageError({ issues: ["--keep-storage requires --build-cache"] }));
+  }
+  if (flags.keepStorage !== undefined && !KEEP_STORAGE_PATTERN.test(flags.keepStorage.trim())) {
+    return Effect.fail(
+      new UsageError({
+        issues: [
+          `--keep-storage "${flags.keepStorage}" is not a size docker accepts (e.g. 10GB, 500MB)`,
+        ],
+      }),
+    );
+  }
+  return Effect.void;
+};
+
 /**
  * Render a prune report and apply the exit-code contract: a dry run that
  * found candidates exits 1 (via process.exitCode — the Effect still succeeds).
  */
 export const reportPrune = (
   report: PruneReport,
-  options: { readonly yes: boolean; readonly json: boolean },
+  options: {
+    readonly yes: boolean;
+    readonly json: boolean;
+    readonly buildCache?: BuildCacheOutcome | undefined;
+  },
 ): Effect.Effect<void> =>
   Effect.gen(function* () {
     if (options.json) {
@@ -136,23 +168,33 @@ export const reportPrune = (
               reason: c.reason,
             })),
             removed: report.removed,
+            ...(options.buildCache !== undefined ? { buildCache: options.buildCache } : {}),
           },
           null,
           2,
         ),
       );
-    } else if (report.candidates.length === 0) {
-      yield* Console.log("Nothing to prune.");
     } else {
-      const now = new Date().toISOString();
-      for (const c of report.candidates) {
-        yield* Console.log(
-          `${c.row.composeProject}  ${c.row.databaseName}  ${relativeAge(c.row.lastUsedAt, now)}  ${c.reason}`,
-        );
+      if (report.candidates.length === 0) {
+        yield* Console.log("Nothing to prune.");
+      } else {
+        const now = new Date().toISOString();
+        for (const c of report.candidates) {
+          yield* Console.log(
+            `${c.row.composeProject}  ${c.row.databaseName}  ${relativeAge(c.row.lastUsedAt, now)}  ${c.reason}`,
+          );
+        }
+        yield* options.yes
+          ? Console.log(`Removed ${report.removed.length} environment(s).`)
+          : Console.log("Dry run — re-run with --yes to remove these environments.");
       }
-      yield* options.yes
-        ? Console.log(`Removed ${report.removed.length} environment(s).`)
-        : Console.log("Dry run — re-run with --yes to remove these environments.");
+      if (options.buildCache !== undefined) {
+        yield* options.buildCache.reclaimed !== null
+          ? Console.log(
+              `Build cache pruned (kept ≤ ${options.buildCache.keepStorage}): ${options.buildCache.reclaimed}`,
+            )
+          : Console.log("Build cache untouched — --build-cache acts only with --yes.");
+      }
     }
     if (!options.yes && report.candidates.length > 0) {
       process.exitCode = 1;
@@ -172,6 +214,13 @@ export const pruneCommand = Command.make(
     yes: Flag.boolean("yes").pipe(
       Flag.withDescription("actually remove (without it: dry run, exit 1 when candidates exist)"),
     ),
+    buildCache: Flag.boolean("build-cache").pipe(
+      Flag.withDescription("also prune the Docker build cache down to --keep-storage (with --yes)"),
+    ),
+    keepStorage: Flag.string("keep-storage").pipe(
+      Flag.optional,
+      Flag.withDescription("build-cache size floor to keep (default 10GB)"),
+    ),
     allowShared: Flag.boolean("allow-shared"),
     json: Flag.boolean("json").pipe(Flag.withDescription("print machine-readable JSON")),
     config: Flag.string("config").pipe(Flag.optional),
@@ -186,6 +235,8 @@ export const pruneCommand = Command.make(
           }),
         );
       }
+      const keepStorage = Option.getOrUndefined(flags.keepStorage);
+      yield* guardBuildCacheFlags({ buildCache: flags.buildCache, keepStorage });
       const scope = yield* resolveProjectScope(flags.config, flags.allProjects);
       const report = yield* scope.rootDir === undefined
         ? runPrune({
@@ -203,6 +254,16 @@ export const pruneCommand = Command.make(
               projectId: scope.projectId,
             }),
           );
-      yield* reportPrune(report, { yes: flags.yes, json: flags.json });
+      // environments first: their teardown frees images whose cache entries
+      // the builder prune can then actually reclaim
+      const buildCache: BuildCacheOutcome | undefined = flags.buildCache
+        ? {
+            keepStorage: keepStorage ?? "10GB",
+            reclaimed: flags.yes
+              ? yield* (yield* DockerCompose).pruneBuildCache(keepStorage ?? "10GB")
+              : null,
+          }
+        : undefined;
+      yield* reportPrune(report, { yes: flags.yes, json: flags.json, buildCache });
     }),
 ).pipe(Command.withDescription("remove environments whose branches are gone (dry-run by default)"));

@@ -10,17 +10,15 @@ import { ProcessSupervisor } from "../platform/process-supervisor.js";
 import { DockerCompose } from "../platform/docker-compose.js";
 import { resolveContext } from "./resolve-context.js";
 import {
+  ensureImageBuilt,
   ensurePortAvailable,
   recordEnvironment,
-  recordImageBuild,
-  reportImageFreshness,
-  warnIfImageStale,
   warnOrAutoClean,
 } from "./state-hooks.js";
 import { withJsonReport } from "./json-report.js";
 import { buildInfoText } from "./info.js";
 
-type UpFlags = { odooOnly: boolean; noBuild: boolean; detach: boolean; logs: boolean };
+type UpFlags = { odooOnly: boolean; detach: boolean; logs: boolean };
 
 const buildCompanionSpecs = (
   recipe: OdooAgenticDevConfig,
@@ -50,7 +48,9 @@ export const buildUpPlan = (
   readonly upArgs: Array<string>;
   readonly companions: Array<CompanionSpec>;
 } => ({
-  upArgs: ["up", "-d", ...(flags.noBuild ? [] : ["--build"]), recipe.odoo.serviceName],
+  // no `--build`: ensureImageBuilt decides beforehand whether a build is
+  // needed, so `up` itself never rescans the build context
+  upArgs: ["up", "-d", recipe.odoo.serviceName],
   companions: flags.odooOnly ? [] : buildCompanionSpecs(recipe, ctx),
 });
 
@@ -73,11 +73,25 @@ export const guardUpJson = (flags: {
       )
     : Effect.void;
 
+/** `--build` forces, `--no-build` skips; asking for both is a contradiction. */
+export const guardUpBuildFlags = (flags: {
+  readonly build: boolean;
+  readonly noBuild: boolean;
+}): Effect.Effect<void, UsageError> =>
+  flags.build && flags.noBuild
+    ? Effect.fail(new UsageError({ issues: ["up --build and --no-build are mutually exclusive"] }))
+    : Effect.void;
+
 export const upCommand = Command.make(
   "up",
   {
     odooOnly: Flag.boolean("odoo-only").pipe(Flag.withDescription("skip companion apps")),
-    noBuild: Flag.boolean("no-build"),
+    build: Flag.boolean("build").pipe(
+      Flag.withDescription("force the image build even when inputs are unchanged"),
+    ),
+    noBuild: Flag.boolean("no-build").pipe(
+      Flag.withDescription("never build; warn when the image looks stale"),
+    ),
     logs: Flag.boolean("logs").pipe(Flag.withDescription("follow odoo logs after start")),
     detach: Flag.boolean("detach").pipe(Flag.withDescription("start containers and return")),
     json: Flag.boolean("json").pipe(
@@ -89,22 +103,18 @@ export const upCommand = Command.make(
     withJsonReport("up", flags.json, (report) =>
       Effect.gen(function* () {
         yield* guardUpJson(flags);
+        yield* guardUpBuildFlags(flags);
         const { ctx, recipe } = yield* resolveContext(flags.config);
         yield* report.setContext(ctx);
         const compose = yield* DockerCompose;
         yield* compose.ensureAvailable();
         yield* ensurePortAvailable(ctx);
         yield* recordEnvironment(recipe, ctx);
-        if (flags.noBuild) {
-          yield* reportImageFreshness(report, yield* warnIfImageStale(recipe, ctx, report.say));
-        }
+        yield* ensureImageBuilt(recipe, ctx, { force: flags.build, skip: flags.noBuild }, report);
         const ref = yield* compose.prepareComposeFile(recipe, ctx);
         const plan = buildUpPlan(recipe, ctx, flags);
         yield* compose.stream(ref, plan.upArgs);
         yield* report.action("compose-up");
-        if (!flags.noBuild) {
-          yield* reportImageFreshness(report, yield* recordImageBuild(recipe, ctx));
-        }
         // the info block is redundant with the json report's identity fields
         if (!report.json) yield* Console.log(buildInfoText(ctx));
         yield* warnOrAutoClean(recipe, ctx, report.say);

@@ -4,7 +4,8 @@ import { join } from "node:path";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { Effect, Layer } from "effect";
 import {
-  buildImageAndRecord,
+  decideImageBuild,
+  ensureImageBuilt,
   ensurePortAvailable,
   imageStaleMessage,
   recordEnvironment,
@@ -19,12 +20,17 @@ import { PortConflictError, UsageError } from "../../src/errors/errors.js";
 import { OdooLifecycle } from "../../src/platform/odoo-lifecycle.js";
 import type { EnvironmentRow } from "../../src/core/environment.js";
 import {
+  computeImageKeyForContext,
+  imageReference,
+  imageRepository,
+} from "../../src/core/image-fingerprint.js";
+import {
   makeFakeGit,
   makeFakePortProbe,
   makeFakeStateStore,
   makeRecordingRunner,
 } from "../../src/testing/fake-adapters.js";
-import { makeCtx, makeRecipe, runWith } from "../helpers.js";
+import { makeCtx, makeRecipe, runSyncSuccess, runWith } from "../helpers.js";
 
 const tmp: Array<string> = [];
 afterAll(() => {
@@ -70,6 +76,8 @@ const makeEnv = (options: {
   readonly busy?: ReadonlySet<number>;
   readonly composeLs?: ReadonlyArray<{ Name: string; Status: string }>;
   readonly branches?: ReadonlySet<string>;
+  /** local `repo:tag` references `docker image inspect` reports as existing */
+  readonly images?: ReadonlySet<string>;
 }) => {
   const recording = makeRecordingRunner((spec) => {
     if (spec.args[0] === "compose" && spec.args[1] === "ls") {
@@ -77,6 +85,15 @@ const makeEnv = (options: {
     }
     if (spec.args[0] === "ps" || (spec.args[0] === "volume" && spec.args[1] === "ls")) {
       return { exitCode: 0, stdout: "", stderr: "" };
+    }
+    if (spec.args[0] === "image" && spec.args[1] === "inspect") {
+      const exists = options.images?.has(String(spec.args[2])) === true;
+      return { exitCode: exists ? 0 : 1, stdout: "", stderr: exists ? "" : "No such image" };
+    }
+    if (spec.args[0] === "image" && spec.args[1] === "ls") {
+      const repo = String(spec.args[2]);
+      const tags = [...(options.images ?? [])].filter((ref) => ref.startsWith(`${repo}:`));
+      return { exitCode: 0, stdout: tags.join("\n") + "\n", stderr: "" };
     }
     return undefined;
   });
@@ -195,55 +212,171 @@ describe("image freshness helpers", () => {
     expect(lines.join("\n")).toContain("Continuing without freshness check");
   });
 
-  it("records image metadata immediately after a successful rebuild", async () => {
-    const calls: Array<string> = [];
-    const lifecycle = Layer.succeed(OdooLifecycle, {
-      buildImage: () =>
+  it("treats an existing keyed tag as fresh even without a recorded build", async () => {
+    const key = runSyncSuccess(computeImageKeyForContext(imageRecipe, imageCtx));
+    const lines: Array<string> = [];
+    const { run } = makeEnv({ images: new Set([imageReference(imageRecipe, key!)]) });
+    await run(recordEnvironment(imageRecipe, imageCtx));
+    const freshness = await run(
+      warnIfImageStale(imageRecipe, imageCtx, (line) =>
         Effect.sync(() => {
-          calls.push("buildImage");
-        }),
-      databaseExists: () => Effect.succeed(true),
-      resetDatabase: () => Effect.void,
-      runPostInitHooks: () => Effect.void,
-      updateModules: () => Effect.void,
-      runTests: () =>
-        Effect.succeed({ exitCode: 0, stdout: "", stderr: "", stdoutTail: "", stderrTail: "" }),
-      snapshotTemplate: () => Effect.void,
-      restoreFromTemplate: () => Effect.void,
-    });
-    const store = makeFakeStateStore();
-    const run = runWith(Layer.merge(store.layer, lifecycle));
-    const extras: Record<string, unknown> = {};
-    const report = {
-      json: true,
-      say: () => Effect.void,
-      action: (name: string) =>
-        Effect.sync(() => {
-          calls.push(`action:${name}`);
-        }),
-      setContext: () => Effect.void,
-      setExitCode: () => Effect.void,
-      setExtra: (key: string, value: unknown) =>
-        Effect.sync(() => {
-          extras[key] = value;
-        }),
-    };
-
-    const laterFailure = new UsageError({ issues: ["later lifecycle failure"] });
-    const failure = await run(
-      Effect.flip(
-        Effect.gen(function* () {
-          yield* recordEnvironment(imageRecipe, imageCtx);
-          yield* buildImageAndRecord(imageRecipe, imageCtx, report);
-          yield* Effect.fail(laterFailure);
+          lines.push(line);
         }),
       ),
     );
+    expect(freshness.fresh).toBe(true);
+    expect(lines).toEqual([]);
+  });
 
-    expect(failure).toBe(laterFailure);
-    expect(calls).toEqual(["buildImage", "action:rebuild-image"]);
-    expect(store.rows.get(imageCtx.composeProjectName)?.imageKey).toMatch(/^[a-f0-9]{64}$/);
-    expect(extras).toMatchObject({ imageManaged: true, imageFresh: true });
+  describe("ensureImageBuilt", () => {
+    const makeBuildEnv = (options: { readonly images?: ReadonlySet<string> }) => {
+      const calls: Array<string> = [];
+      const lifecycle = Layer.succeed(OdooLifecycle, {
+        buildImage: () =>
+          Effect.sync(() => {
+            calls.push("buildImage");
+          }),
+        databaseExists: () => Effect.succeed(true),
+        resetDatabase: () => Effect.void,
+        runPostInitHooks: () => Effect.void,
+        updateModules: () => Effect.void,
+        runTests: () =>
+          Effect.succeed({ exitCode: 0, stdout: "", stderr: "", stdoutTail: "", stderrTail: "" }),
+        snapshotTemplate: () => Effect.void,
+        restoreFromTemplate: () => Effect.void,
+      });
+      const recording = makeRecordingRunner((spec) => {
+        if (spec.args[0] === "image" && spec.args[1] === "inspect") {
+          const exists = options.images?.has(String(spec.args[2])) === true;
+          return { exitCode: exists ? 0 : 1, stdout: "", stderr: exists ? "" : "No such image" };
+        }
+        if (spec.args[0] === "image" && spec.args[1] === "ls") {
+          const repo = String(spec.args[2]);
+          const tags = [...(options.images ?? [])].filter((ref) => ref.startsWith(`${repo}:`));
+          return { exitCode: 0, stdout: tags.join("\n") + "\n", stderr: "" };
+        }
+        if (spec.args[0] === "image" && spec.args[1] === "rm") {
+          calls.push(`imageRm:${spec.args.slice(3).join(",")}`);
+          return { exitCode: 0, stdout: "", stderr: "" };
+        }
+        return undefined;
+      });
+      const store = makeFakeStateStore();
+      const run = runWith(
+        Layer.mergeAll(Layer.provide(DockerComposeLive, recording.layer), store.layer, lifecycle),
+      );
+      const extras: Record<string, unknown> = {};
+      const report = {
+        json: true,
+        say: () => Effect.void,
+        action: (name: string) =>
+          Effect.sync(() => {
+            calls.push(`action:${name}`);
+          }),
+        setContext: () => Effect.void,
+        setExitCode: () => Effect.void,
+        setExtra: (key: string, value: unknown) =>
+          Effect.sync(() => {
+            extras[key] = value;
+          }),
+      };
+      return { calls, extras, report, run, store };
+    };
+
+    it("builds and records when the keyed tag is missing, even if the command later fails", async () => {
+      const { calls, extras, report, run, store } = makeBuildEnv({});
+      const laterFailure = new UsageError({ issues: ["later lifecycle failure"] });
+      const failure = await run(
+        Effect.flip(
+          Effect.gen(function* () {
+            yield* recordEnvironment(imageRecipe, imageCtx);
+            yield* ensureImageBuilt(imageRecipe, imageCtx, { force: false }, report);
+            yield* Effect.fail(laterFailure);
+          }),
+        ),
+      );
+      expect(failure).toBe(laterFailure);
+      expect(calls).toEqual(["buildImage", "action:build-image"]);
+      expect(store.rows.get(imageCtx.composeProjectName)?.imageKey).toMatch(/^[a-f0-9]{64}$/);
+      expect(extras).toMatchObject({ imageManaged: true, imageFresh: true, imageBuild: "build" });
+    });
+
+    it("skips the build when the keyed tag exists and adopts it into the row", async () => {
+      const key = runSyncSuccess(computeImageKeyForContext(imageRecipe, imageCtx));
+      const { calls, extras, report, run, store } = makeBuildEnv({
+        images: new Set([imageReference(imageRecipe, key!)]),
+      });
+      const decision = await run(
+        Effect.gen(function* () {
+          yield* recordEnvironment(imageRecipe, imageCtx);
+          return yield* ensureImageBuilt(imageRecipe, imageCtx, { force: false }, report);
+        }),
+      );
+      expect(decision).toBe("skip-fresh");
+      expect(calls).toEqual([]);
+      expect(store.rows.get(imageCtx.composeProjectName)?.imageKey).toBe(key);
+      expect(extras).toMatchObject({ imageBuild: "skip-fresh", imageFresh: true });
+    });
+
+    it("--build forces and sweeps superseded keyed tags nothing references", async () => {
+      const staleRef = `${imageRepository(imageRecipe)}:0123456789ab`;
+      const { calls, report, run } = makeBuildEnv({ images: new Set([staleRef]) });
+      await run(
+        Effect.gen(function* () {
+          yield* recordEnvironment(imageRecipe, imageCtx);
+          yield* ensureImageBuilt(imageRecipe, imageCtx, { force: true }, report);
+        }),
+      );
+      expect(calls).toEqual(["buildImage", "action:build-image", `imageRm:${staleRef}`]);
+    });
+
+    it("skip warns instead of building", async () => {
+      const { calls, extras, report, run } = makeBuildEnv({});
+      const decision = await run(
+        Effect.gen(function* () {
+          yield* recordEnvironment(imageRecipe, imageCtx);
+          return yield* ensureImageBuilt(
+            imageRecipe,
+            imageCtx,
+            { force: false, skip: true },
+            report,
+          );
+        }),
+      );
+      expect(decision).toBe("skip-flag");
+      expect(calls).toEqual([]);
+      expect(extras).toMatchObject({ imageBuild: "skip-flag", imageFresh: false });
+    });
+  });
+
+  describe("decideImageBuild", () => {
+    const base = {
+      applicable: true,
+      keyed: true,
+      exists: false,
+      rowFresh: false,
+      force: false,
+      skip: false,
+    };
+    it.each([
+      ["stock images never build", { ...base, applicable: false }, "none"],
+      ["skip wins over everything", { ...base, skip: true, force: true }, "skip-flag"],
+      ["force always builds", { ...base, force: true, exists: true, rowFresh: true }, "build"],
+      ["missing image builds", { ...base, exists: false }, "build"],
+      ["keyed + existing tag skips", { ...base, exists: true }, "skip-fresh"],
+      [
+        "fixed-name + existing + fresh row skips",
+        { ...base, keyed: false, exists: true, rowFresh: true },
+        "skip-fresh",
+      ],
+      [
+        "fixed-name + existing + stale row rebuilds",
+        { ...base, keyed: false, exists: true, rowFresh: false },
+        "build",
+      ],
+    ] as const)("%s", (_label, input, expected) => {
+      expect(decideImageBuild(input)).toBe(expected);
+    });
   });
 
   it("adds image freshness fields to json reports", async () => {
@@ -313,6 +446,13 @@ describe("ensurePortAvailable", () => {
 });
 
 describe("warnOrAutoClean", () => {
+  // auto-clean now defaults on; these tests pin the warn-only opt-out
+  const warnRecipe = makeRecipe({
+    project: { id: "kl", dbPrefix: "kl", sharedDatabase: "kl_e2e_demo", sharedBranches: ["main"] },
+    odoo: { version: "18.0", addons: [{ host: "addons", container: "/mnt/c" }] },
+    cleanup: { auto: false },
+  });
+
   it("warns about prune candidates, never counting the current environment", async () => {
     const log = vi.spyOn(console, "log").mockImplementation(() => {});
     const { run } = makeEnv({
@@ -333,7 +473,7 @@ describe("warnOrAutoClean", () => {
         { Name: "kl_keep", Status: "running(2)" },
       ],
     });
-    const candidates = await run(warnOrAutoClean(recipe, onFeature));
+    const candidates = await run(warnOrAutoClean(warnRecipe, onFeature));
     expect(candidates.map((c) => [c.row.composeProject, c.reason])).toEqual([
       ["kl_gone", "gone-rootdir"],
     ]);
@@ -352,7 +492,7 @@ describe("warnOrAutoClean", () => {
       ],
       composeLs: [{ Name: "kl_old", Status: "exited(2)" }],
     });
-    const candidates = await run(warnOrAutoClean(recipe, onFeature));
+    const candidates = await run(warnOrAutoClean(warnRecipe, onFeature));
     expect(candidates.map((c) => c.reason)).toEqual(["stale"]);
   });
 
@@ -368,7 +508,7 @@ describe("warnOrAutoClean", () => {
       ],
       branches: new Set(["alive"]),
     });
-    const candidates = await run(warnOrAutoClean(recipe, onFeature));
+    const candidates = await run(warnOrAutoClean(warnRecipe, onFeature));
     expect(candidates.map((c) => [c.row.composeProject, c.reason])).toEqual([
       ["kl_dead", "gone-branch"],
     ]);
@@ -380,7 +520,7 @@ describe("warnOrAutoClean", () => {
       rows: [makeRow({ composeProject: "kl_shared", shared: true })],
       composeLs: [],
     });
-    await expect(run(warnOrAutoClean(recipe, onFeature))).resolves.toEqual([]);
+    await expect(run(warnOrAutoClean(warnRecipe, onFeature))).resolves.toEqual([]);
     expect(log).not.toHaveBeenCalled();
   });
 });

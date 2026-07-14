@@ -283,7 +283,7 @@ describe("DockerComposeLive", () => {
     expect(error).toBeInstanceOf(ComposeCommandError);
   });
 
-  it("removeByLabel removes containers, volumes, and networks by compose project label", async () => {
+  it("removeByLabel removes containers, volumes, networks, and legacy images by compose project label", async () => {
     const { recording, run } = makeEnv((spec) => {
       if (spec.args[0] === "ps") return { exitCode: 0, stdout: "c1\nc2\n", stderr: "" };
       if (spec.args[0] === "volume" && spec.args[1] === "ls") {
@@ -291,6 +291,14 @@ describe("DockerComposeLive", () => {
       }
       if (spec.args[0] === "network" && spec.args[1] === "ls") {
         return { exitCode: 0, stdout: "n1\n", stderr: "" };
+      }
+      if (spec.args[0] === "image" && spec.args[1] === "ls") {
+        // one legacy per-worktree image, one shared keyed image that must survive
+        return {
+          exitCode: 0,
+          stdout: "kl_gone-odoo:latest\noad-kl-odoo:abc123def456\n",
+          stderr: "",
+        };
       }
       return undefined;
     });
@@ -307,7 +315,38 @@ describe("DockerComposeLive", () => {
       ["volume", "rm", "v1"],
       ["network", "ls", "-q", "--filter", "label=com.docker.compose.project=kl_gone"],
       ["network", "rm", "n1"],
+      [
+        "image",
+        "ls",
+        "--filter",
+        "label=com.docker.compose.project=kl_gone",
+        "--format",
+        "{{.Repository}}:{{.Tag}}",
+      ],
+      ["image", "rm", "-f", "kl_gone-odoo:latest"],
     ]);
+  });
+
+  it("pruneBuildCache issues a forced, size-bounded builder prune and returns the summary", async () => {
+    const { recording, run } = makeEnv((spec) =>
+      spec.args[0] === "builder"
+        ? { exitCode: 0, stdout: "ID\t\tRECLAIMABLE\nabc\t\t1.2GB\nTotal:\t1.2GB\n", stderr: "" }
+        : undefined,
+    );
+    const summary = await run(
+      Effect.gen(function* () {
+        const dc = yield* DockerCompose;
+        return yield* dc.pruneBuildCache("10GB");
+      }),
+    );
+    expect(recording.calls.at(-1)?.args).toEqual([
+      "builder",
+      "prune",
+      "--force",
+      "--keep-storage",
+      "10GB",
+    ]);
+    expect(summary).toBe("Total:\t1.2GB");
   });
 
   it("removeByLabel skips rm calls when nothing matches", async () => {
@@ -318,7 +357,7 @@ describe("DockerComposeLive", () => {
         yield* dc.removeByLabel("kl_gone");
       }),
     );
-    expect(recording.calls.map((c) => c.args[0])).toEqual(["ps", "volume", "network"]);
+    expect(recording.calls.map((c) => c.args[0])).toEqual(["ps", "volume", "network", "image"]);
   });
 
   it("listLabeledContainers queries oad-labeled containers and dedupes per project", async () => {

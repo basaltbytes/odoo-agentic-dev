@@ -17,6 +17,7 @@ import {
 } from "../../src/commands/worktree.js";
 import { DockerComposeLive } from "../../src/platform/docker-compose.js";
 import { OdooLifecycle } from "../../src/platform/odoo-lifecycle.js";
+import { ComposeCommandError } from "../../src/errors/errors.js";
 import { GENERATED_COMPOSE_RELATIVE_PATH } from "../../src/core/compose-model.js";
 import type { ExecResult, ExecSpec } from "../../src/platform/command-runner.js";
 import {
@@ -34,9 +35,14 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+// a managed build section so the worktree setup exercises the image gate
 const CONFIG_SOURCE = `export default {
   project: { id: "kl", dbPrefix: "kl" },
-  odoo: { version: "18.0", addons: [{ host: "addons", container: "/mnt/c" }] },
+  odoo: {
+    version: "18.0",
+    build: { pipPackages: ["websocket-client"] },
+    addons: [{ host: "addons", container: "/mnt/c" }],
+  },
 }
 `;
 
@@ -172,13 +178,22 @@ describe("withStdoutRedirectedToStderr", () => {
   });
 });
 
-const makeLifecycle = (calls: Array<string>) => {
+const makeLifecycle = (calls: Array<string>, options?: { readonly failBuild?: boolean }) => {
   const record = (name: string) =>
     Effect.sync(() => {
       calls.push(name);
     });
   return Layer.succeed(OdooLifecycle, {
-    buildImage: () => record("buildImage"),
+    buildImage: () =>
+      options?.failBuild === true
+        ? Effect.fail(
+            new ComposeCommandError({
+              args: ["build", "odoo"],
+              exitCode: 1,
+              stderrTail: "build exploded",
+            }),
+          )
+        : record("buildImage"),
     databaseExists: () => record("databaseExists").pipe(Effect.as(true)),
     resetDatabase: () => record("resetDatabase"),
     runPostInitHooks: () => record("runPostInitHooks"),
@@ -217,11 +232,12 @@ describe("runWorktreeCreate", () => {
         writeFileSync(join(wtPath, "odoo-agentic-dev.config.mjs"), CONFIG_SOURCE);
         return undefined;
       }
-      if (options?.failBuild === true && spec.args.includes("build")) {
-        return { exitCode: 1, stdout: "", stderr: "build exploded" };
-      }
       if (spec.command === "docker" && spec.args[0] === "compose" && spec.args[1] === "ls") {
         return { exitCode: 0, stdout: "[]", stderr: "" };
+      }
+      // the keyed tag never exists in this harness, so setup always builds
+      if (spec.command === "docker" && spec.args[0] === "image" && spec.args[1] === "inspect") {
+        return { exitCode: 1, stdout: "", stderr: "No such image" };
       }
       return undefined;
     });
@@ -231,7 +247,7 @@ describe("runWorktreeCreate", () => {
       Layer.provide(DockerComposeLive, recording.layer),
       recording.layer,
       store.layer,
-      makeLifecycle(lifecycleCalls),
+      makeLifecycle(lifecycleCalls, { failBuild: options?.failBuild ?? false }),
       makeFakeGit({ _tag: "Branch", branch: "worktree-feat" }),
     );
     const said: Array<string> = [];
@@ -279,13 +295,9 @@ describe("runWorktreeCreate", () => {
     expect(said.some((l) => l.includes(".env.e2e"))).toBe(true);
     expect(said.some((l) => l.includes("missing.env"))).toBe(true);
 
-    // the full setup ran against the WORKTREE as project root: image build,
+    // the full setup ran against the WORKTREE as project root: image build and
     // db reset via the lifecycle, and the environment recorded in the registry
-    expect(
-      recording.calls.some(
-        (c) => c.command === "docker" && c.args.includes("build") && c.cwd === wtPath,
-      ),
-    ).toBe(true);
+    expect(lifecycleCalls).toContain("buildImage");
     expect(lifecycleCalls).toContain("resetDatabase");
     expect(store.rows.has("kl_kl_worktree_feat")).toBe(true);
   });

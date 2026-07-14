@@ -4,8 +4,29 @@ import { isAbsolute, relative, resolve as resolvePath } from "node:path";
 import { Effect } from "effect";
 import { ConfigLoadError } from "../errors/errors.js";
 import { renderDockerfile } from "./dockerfile-model.js";
+import { sanitizeNamePart } from "./database-name.js";
 import type { OdooAgenticDevConfig } from "./project-recipe.js";
 import type { WorktreeContext } from "./worktree-context.js";
+
+/**
+ * One image repository per project (not per worktree): worktrees whose build
+ * inputs hash to the same key share a single image instead of each tagging a
+ * multi-GB copy under compose's default `<composeProject>-<service>` name.
+ */
+export const imageRepository = (recipe: OdooAgenticDevConfig): string =>
+  `oad-${sanitizeNamePart(recipe.project.id)}-odoo`;
+
+/** Content-addressed reference: the tag IS the image key, so "tag exists" means "fresh". */
+export const imageReference = (recipe: OdooAgenticDevConfig, imageKey: string): string =>
+  `${imageRepository(recipe)}:${imageKey.slice(0, 12)}`;
+
+/**
+ * Keyed naming applies only to fully oad-managed builds: `odoo.build` recipes
+ * fingerprint every build input, while a user `odoo.dockerfile`'s COPY sources
+ * are opaque to us, and an explicit `imageName` stays the user's to manage.
+ */
+export const usesKeyedImage = (recipe: OdooAgenticDevConfig): boolean =>
+  recipe.odoo.build !== null && recipe.odoo.imageName === null;
 
 const updatePathFingerprint = (
   hash: ReturnType<typeof createHash>,

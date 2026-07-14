@@ -1,7 +1,7 @@
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { Effect } from "effect";
-import { buildUpPlan, guardUpJson } from "../../src/commands/up.js";
+import { buildUpPlan, guardUpBuildFlags, guardUpJson } from "../../src/commands/up.js";
 import {
   buildDownArgs,
   finalizeDownState,
@@ -36,11 +36,11 @@ describe("buildUpPlan", () => {
   it("builds compose args and companion specs with injected env", () => {
     const plan = buildUpPlan(recipe, onFeature, {
       odooOnly: false,
-      noBuild: false,
       detach: false,
       logs: false,
     });
-    expect(plan.upArgs).toEqual(["up", "-d", "--build", "odoo"]);
+    // never `--build`: the image gate decides before compose up runs
+    expect(plan.upArgs).toEqual(["up", "-d", "odoo"]);
     expect(plan.companions).toHaveLength(1);
     const pwa = plan.companions[0]!;
     expect(pwa.name).toBe("pwa");
@@ -51,15 +51,32 @@ describe("buildUpPlan", () => {
     expect(pwa.env.ODOO_DATABASE).toBe(onFeature.databaseName);
   });
 
-  it("--no-build drops --build; --odoo-only drops companions", () => {
+  it("--odoo-only drops companions", () => {
     const plan = buildUpPlan(recipe, onFeature, {
       odooOnly: true,
-      noBuild: true,
       detach: false,
       logs: false,
     });
     expect(plan.upArgs).toEqual(["up", "-d", "odoo"]);
     expect(plan.companions).toEqual([]);
+  });
+});
+
+describe("guardUpBuildFlags", () => {
+  it("rejects --build combined with --no-build", () => {
+    const error = runSyncFailure(guardUpBuildFlags({ build: true, noBuild: true }));
+    expect(error).toBeInstanceOf(UsageError);
+    expect(error.message).toContain("mutually exclusive");
+  });
+
+  it("allows each flag alone and neither", () => {
+    for (const flags of [
+      { build: true, noBuild: false },
+      { build: false, noBuild: true },
+      { build: false, noBuild: false },
+    ]) {
+      expect(() => runSyncSuccess(guardUpBuildFlags(flags))).not.toThrow();
+    }
   });
 });
 
@@ -159,6 +176,10 @@ describe("down guard", () => {
         Effect.sync(() => {
           calls.push(["removeByLabel", composeProject]);
         }),
+      imageExists: () => Effect.succeed(false),
+      listImageTags: () => Effect.succeed([]),
+      removeImages: () => Effect.void,
+      pruneBuildCache: () => Effect.succeed("Total reclaimed space: 0B"),
     };
     const mode = await Effect.runPromise(runDownDocker(compose, ref, onFeature, { volumes: true }));
     expect(mode).toBe("label-fallback");

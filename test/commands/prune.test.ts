@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Effect, Layer } from "effect";
-import { reportPrune, runPrune } from "../../src/commands/prune.js";
+import { guardBuildCacheFlags, reportPrune, runPrune } from "../../src/commands/prune.js";
 import { DockerComposeLive } from "../../src/platform/docker-compose.js";
 import { Git } from "../../src/platform/git.js";
 import { GitError } from "../../src/errors/errors.js";
@@ -154,6 +154,14 @@ describe("runPrune", () => {
       ["volume", "rm", "v1"],
       ["network", "ls", "-q", "--filter", "label=com.docker.compose.project=kl_gone"],
       ["network", "rm", "n1"],
+      [
+        "image",
+        "ls",
+        "--filter",
+        "label=com.docker.compose.project=kl_gone",
+        "--format",
+        "{{.Repository}}:{{.Tag}}",
+      ],
     ]);
   });
 
@@ -173,6 +181,14 @@ describe("runPrune", () => {
       ["ps", "-aq", "--filter", "label=com.docker.compose.project=kl_vanished"],
       ["volume", "ls", "-q", "--filter", "label=com.docker.compose.project=kl_vanished"],
       ["network", "ls", "-q", "--filter", "label=com.docker.compose.project=kl_vanished"],
+      [
+        "image",
+        "ls",
+        "--filter",
+        "label=com.docker.compose.project=kl_vanished",
+        "--format",
+        "{{.Repository}}:{{.Tag}}",
+      ],
     ]);
   });
 
@@ -305,5 +321,66 @@ describe("reportPrune", () => {
     });
     expect(parsed.removed).toEqual([]);
     expect(process.exitCode).toBe(1);
+  });
+});
+
+describe("guardBuildCacheFlags", () => {
+  it("rejects --keep-storage without --build-cache and unparseable sizes", async () => {
+    await expect(
+      Effect.runPromise(guardBuildCacheFlags({ buildCache: false, keepStorage: "10GB" })),
+    ).rejects.toThrow(/--build-cache/);
+    await expect(
+      Effect.runPromise(guardBuildCacheFlags({ buildCache: true, keepStorage: "ten gigs" })),
+    ).rejects.toThrow(/not a size/);
+  });
+
+  it("accepts docker size spellings and the flagless default", async () => {
+    for (const keepStorage of [undefined, "10GB", "500MB", "1.5gb", "2GiB", "0B"]) {
+      await expect(
+        Effect.runPromise(guardBuildCacheFlags({ buildCache: true, keepStorage })),
+      ).resolves.toBeUndefined();
+    }
+    await expect(
+      Effect.runPromise(guardBuildCacheFlags({ buildCache: false, keepStorage: undefined })),
+    ).resolves.toBeUndefined();
+  });
+});
+
+describe("reportPrune --build-cache", () => {
+  it("reports the reclaimed summary after a --yes cache prune", async () => {
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    await Effect.runPromise(
+      reportPrune(
+        { candidates: [], removed: [] },
+        {
+          yes: true,
+          json: false,
+          buildCache: { keepStorage: "10GB", reclaimed: "Total reclaimed space: 1.2GB" },
+        },
+      ),
+    );
+    const output = log.mock.calls.map((call) => String(call[0])).join("\n");
+    expect(output).toMatch(/Build cache pruned \(kept ≤ 10GB\): Total reclaimed space: 1.2GB/);
+  });
+
+  it("dry runs say the cache was untouched, and json embeds the outcome", async () => {
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    await Effect.runPromise(
+      reportPrune(
+        { candidates: [], removed: [] },
+        { yes: false, json: false, buildCache: { keepStorage: "10GB", reclaimed: null } },
+      ),
+    );
+    expect(log.mock.calls.map((call) => String(call[0])).join("\n")).toMatch(/only with --yes/);
+
+    log.mockClear();
+    await Effect.runPromise(
+      reportPrune(
+        { candidates: [], removed: [] },
+        { yes: true, json: true, buildCache: { keepStorage: "10GB", reclaimed: "0B" } },
+      ),
+    );
+    const parsed = JSON.parse(String(log.mock.calls[0]![0]));
+    expect(parsed.buildCache).toEqual({ keepStorage: "10GB", reclaimed: "0B" });
   });
 });

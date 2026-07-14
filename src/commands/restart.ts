@@ -6,11 +6,12 @@ import { UsageError } from "../errors/errors.js";
 import type { RuntimeError } from "../errors/errors.js";
 import { DockerCompose } from "../platform/docker-compose.js";
 import type { DockerComposeApi } from "../platform/docker-compose.js";
+import type { OdooLifecycleApi } from "../platform/odoo-lifecycle.js";
 import type { StateStoreApi } from "../platform/state-store.js";
 import {
+  ensureImageBuilt,
   ensurePortAvailable,
   recordEnvironment,
-  recordImageBuild,
   reportImageFreshness,
   warnIfImageStale,
 } from "./state-hooks.js";
@@ -27,7 +28,6 @@ export type RestartFlags = {
 
 export type RestartPlan = {
   readonly ensureDbArgs: Array<string>;
-  readonly buildArgs: Array<string> | null;
   readonly removeOdooArgs: Array<string> | null;
   readonly restartOdooArgs: Array<string>;
   readonly logsArgs: Array<string> | null;
@@ -38,7 +38,6 @@ export const buildRestartPlan = (
   flags: RestartFlags,
 ): RestartPlan => ({
   ensureDbArgs: ["up", "-d", recipe.odoo.databaseServiceName],
-  buildArgs: flags.rebuild ? ["build", recipe.odoo.serviceName] : null,
   removeOdooArgs: flags.rebuild ? ["rm", "-sf", recipe.odoo.serviceName] : null,
   restartOdooArgs: flags.rebuild
     ? ["up", "-d", recipe.odoo.serviceName]
@@ -89,13 +88,22 @@ export const runRestart = (
   ctx: WorktreeContext,
   flags: RestartFlags,
   report: CommandReporter,
-): Effect.Effect<void, RuntimeError, DockerComposeApi | PortProbeApi | StateStoreApi> =>
+): Effect.Effect<
+  void,
+  RuntimeError,
+  DockerComposeApi | PortProbeApi | StateStoreApi | OdooLifecycleApi
+> =>
   Effect.gen(function* () {
     const compose = yield* DockerCompose;
     yield* compose.ensureAvailable();
     yield* ensurePortAvailable(ctx);
     yield* recordEnvironment(recipe, ctx);
-    if (!flags.rebuild) {
+    if (flags.rebuild) {
+      // force through the shared image gate (build + record + keyed-tag GC)
+      yield* ensureImageBuilt(recipe, ctx, { force: true }, report);
+    } else {
+      // a plain restart reuses the existing container, so a fresher image
+      // would not be picked up anyway — warn instead of building
       yield* reportImageFreshness(report, yield* warnIfImageStale(recipe, ctx, report.say));
     }
 
@@ -105,11 +113,6 @@ export const runRestart = (
     yield* compose.waitForDb(ref, recipe.odoo.databaseServiceName);
     yield* report.action("ensure-db");
 
-    if (plan.buildArgs !== null) {
-      yield* compose.stream(ref, plan.buildArgs);
-      yield* report.action("rebuild-image");
-      yield* reportImageFreshness(report, yield* recordImageBuild(recipe, ctx));
-    }
     if (plan.removeOdooArgs !== null) {
       yield* compose.stream(ref, plan.removeOdooArgs);
       yield* report.action("remove-odoo");

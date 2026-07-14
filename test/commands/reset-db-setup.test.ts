@@ -164,6 +164,7 @@ describe("runSetup", () => {
             allowShared: false,
             noTemplate: false,
             refreshTemplate: false,
+            build: false,
           },
           report,
         ),

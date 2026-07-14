@@ -192,7 +192,7 @@ export default defineConfig({
 
   cleanup: {
     maxAgeDays: 30,                   // default — age threshold for prune --older-than candidates
-    auto: false,                      // default — opt in to automatic pruning of gone-branch stacks
+    auto: true,                       // default — auto-prune gone/stale stacks after up/setup (false: warn only)
   },
 });
 ```
@@ -203,23 +203,13 @@ Database names are derived from the branch: at most **one** leading type segment
 
 They run at different times against different things. `setup` is host-side workspace bootstrap — submodules and dependency installs — executed once when a worktree is prepared, before any database exists. `database.postInit` runs against Odoo after **every** database initialization or reset (and is part of the template cache key, so editing a hook correctly invalidates cached snapshots). Rule of thumb: filesystem state → `setup`; database state → `database.postInit`.
 
-### Docker build context and cache
+### Docker images, build context, and cache
 
-Generated Odoo images build with the project root as Docker context. Add a project `.dockerignore` so Docker does not rescan or upload irrelevant files on every build:
+`odoo.build` recipes get one image **per project, shared across worktrees**, tagged by a fingerprint of the build inputs: `oad-<project-id>-odoo:<key>`. The key hashes the rendered Dockerfile plus the contents of every `pipRequirements` and `copy` source, so the tag existing means the image already matches the current inputs — commands skip the build entirely instead of re-tagging a multi-gigabyte copy per worktree. When inputs change, the next command builds the new tag once and sweeps superseded `oad-<project-id>-odoo` tags that no registered environment references anymore. An explicit `odoo.imageName` opts out of keyed naming (the tag is then yours to manage); `odoo.dockerfile` recipes keep compose's per-worktree naming because their COPY sources cannot be fingerprinted.
 
-```dockerignore
-.git
-node_modules
-dist
-coverage
-.venv
-__pycache__
-.pytest_cache
-.odoo-agentic-dev/logs
-*.log
-```
+The build context is the project root, but for `odoo.build` recipes oad also generates `.odoo-agentic-dev/Dockerfile.generated.dockerignore` — BuildKit reads a `<Dockerfile>.dockerignore` next to the Dockerfile in preference to the root `.dockerignore` — that excludes everything (`*`) and re-includes only the `pipRequirements`/`copy` sources. Builds therefore never rescan or upload `.git`, `node_modules`, or the rest of the repo, no matter how large the worktree is. (If a `copy` entry points at the repo root itself, the allowlist cannot be expressed and the full context is used — add a manual root `.dockerignore` in that case, and for hand-written `odoo.dockerfile` recipes.)
 
-Do not ignore files referenced by `odoo.build.pipRequirements` or `odoo.build.copy`; Docker must see those paths. The generated Dockerfile keeps expensive dependency layers cacheable by installing apt packages first, copying requirements files just before `pip install`, and copying arbitrary project assets after the pip layer.
+The generated Dockerfile keeps expensive dependency layers cacheable by installing apt packages first, copying requirements files just before `pip install`, and copying arbitrary project assets after the pip layer.
 
 ## Commands
 
@@ -249,7 +239,7 @@ Print the resolved worktree context (worktree name, database, Compose project, O
 
 ### `oad setup`
 
-Prepare a new worktree: initialize Git submodules (if the recipe asks for it), run the recipe's package manager install steps, ensure the Docker image builds, reset and initialize the current worktree database, run post-init hooks, and print URLs. It prints the resolved database before destructive work and never deletes a shared database by default. The database step honors the same template fast-reset semantics as `reset-db` (see below).
+Prepare a new worktree: initialize Git submodules (if the recipe asks for it), run the recipe's package manager install steps, ensure the Docker image exists for the current build inputs (skipping the build when the fingerprint-keyed tag is already present — see "Docker images, build context, and cache"), reset and initialize the current worktree database, run post-init hooks, and print URLs. It prints the resolved database before destructive work and never deletes a shared database by default. The database step honors the same template fast-reset semantics as `reset-db` (see below).
 
 | Flag | Meaning |
 | --- | --- |
@@ -258,6 +248,7 @@ Prepare a new worktree: initialize Git submodules (if the recipe asks for it), r
 | `--allow-shared` | permit acting on the shared database |
 | `--no-template` | full init even when a template snapshot exists (template kept) |
 | `--refresh-template` | full init and take a fresh template snapshot |
+| `--build` | force the image build even when inputs are unchanged |
 | `--json` | suppress decorative output; print one final JSON report line |
 | `--config <path>` | explicit config file path |
 
@@ -265,14 +256,15 @@ Prepare a new worktree: initialize Git submodules (if the recipe asks for it), r
 
 Start Odoo (and PostgreSQL) on the derived port, then the configured companion apps with context-derived env injected (`ODOO_DATABASE`, `ODOO_BASE_URL`, per-app ports). In attached mode, Ctrl-C stops all child processes and the first failing process is reported.
 
-`up` rebuilds the Odoo image by default, but Docker reuses cached layers when image inputs did not change. Use `--no-build` for a faster start when you know the image is current; the CLI warns when tracked image inputs no longer match the last recorded successful build.
+`up` builds the Odoo image only when needed: for managed `odoo.build` recipes the fingerprint-keyed tag existing means the image already matches the current inputs and the build is skipped outright — no context scan, no compose `--build`. `--build` forces a build; `--no-build` never builds and instead warns when the image looks stale.
 
 Before starting anything, `up` probes the derived Odoo port. If it is busy and the holder is not this worktree's own already-running stack (idempotent `up`), it fails fast with a `PortConflictError` naming the holder stack when the state registry knows it — set `ODOO_HTTP_PORT` to override, or `prune` stale environments.
 
 | Flag | Meaning |
 | --- | --- |
 | `--odoo-only` | skip companion apps |
-| `--no-build` | start containers without rebuilding the image |
+| `--build` | force the image build even when inputs are unchanged |
+| `--no-build` | never build; warn when the image looks stale |
 | `--logs` | follow Odoo logs after start |
 | `--detach` | start containers and return |
 | `--json` | suppress decorative output; print one final JSON report line |
@@ -340,11 +332,11 @@ Snapshots carry a key derived from the database-shaping recipe inputs: `initialM
 
 #### Image freshness
 
-For recipes with `odoo.build` or `odoo.dockerfile`, the state registry records an image key after a successful build. `up`, `setup`, `restart --rebuild`, and `--build` lifecycle commands refresh it. Commands that run without building warn when the current image inputs differ from the recorded key, or when no successful build is known yet.
+Every image-dependent command (`up`, `setup`, `reset-db`, `update`, `test`) runs the same gate: for managed `odoo.build` recipes, the fingerprint-keyed tag existing means fresh (even when a sibling worktree built it) and the build is skipped; a missing or superseded tag triggers a build before the command proceeds. Recipes with an explicit `imageName` or a hand-written `odoo.dockerfile` fall back to the per-worktree image key the state registry records after each successful build. `--build`/`--rebuild` always force; plain `restart` never builds (it reuses the existing container) and only warns when the image looks stale.
 
 ### `oad update <modules>`
 
-Update modules in the current worktree database. Starts PostgreSQL if needed, stops Odoo before the update when needed, and restarts Odoo after a successful update unless `--no-restart` is passed. It does not rebuild the image unless `--build` is passed.
+Update modules in the current worktree database. Starts PostgreSQL if needed, stops Odoo before the update when needed, and restarts Odoo after a successful update unless `--no-restart` is passed. The shared image gate builds first only when the image is missing or verifiably stale; `--build` forces it.
 
 ```bash
 oad update KL_setup
@@ -360,7 +352,7 @@ oad update KL_base,KL_sale,KL_stock
 
 ### `oad test`
 
-Run Odoo tests against the current worktree database. Options map to Odoo CLI flags, the exit code is non-zero on test failure, and recipes may define reusable test profiles (`test.profiles`) selected with `--profile`. It does not rebuild the image unless `--build` is passed.
+Run Odoo tests against the current worktree database. Options map to Odoo CLI flags, the exit code is non-zero on test failure, and recipes may define reusable test profiles (`test.profiles`) selected with `--profile`. The shared image gate builds first only when the image is missing or verifiably stale; `--build` forces it.
 
 Browser-based Odoo suites can be skipped by Odoo itself when the image is missing required Python/browser dependencies. `oad test` treats known browser infrastructure skips (`websocket-client`, missing Chrome/Chromium, Chrome DevTools/headless startup failures) as failures and prints the fix. Partial Hoot/browser skips are reported as warnings; a Hoot run with skipped tests and zero passed tests is treated as a failure.
 
@@ -404,7 +396,7 @@ Garbage-collect dead environments. By default only clearly-dead targets are cand
 The safety contract:
 
 - Without `--yes`, `prune` is a dry run: it prints the kill list (stack, database, age, reason) and exits 1 when candidates exist, 0 when there are none. Nothing is removed.
-- With `--yes`, teardown is label-based (`docker rm -f`, `docker volume rm`, and `docker network rm` by Compose project label), so it works even when the original compose file is gone; the registry row is removed last.
+- With `--yes`, teardown is label-based (`docker rm -f`, `docker volume rm`, `docker network rm`, and removal of the environment's legacy per-worktree images by Compose project label — shared fingerprint-keyed images are never touched here; those are swept when a rebuild supersedes them), so it works even when the original compose file is gone; the registry row is removed last.
 - Shared environments are always skipped unless `--allow-shared` is passed.
 - The environment a command is currently running in is never an auto-clean candidate.
 
@@ -413,13 +405,17 @@ The safety contract:
 | `--older-than <days>` | also prune environments unused for more than `<days>` |
 | `--all-projects` | every project in the registry (works without a config) |
 | `--yes` | actually remove (without it: dry run, exit 1 when candidates exist) |
+| `--build-cache` | also prune the Docker build cache down to `--keep-storage` (acts only with `--yes`) |
+| `--keep-storage <size>` | build-cache size floor to keep (default `10GB`) |
 | `--allow-shared` | permit pruning shared environments |
 | `--json` | print the candidates/removals report as JSON |
 | `--config <path>` | explicit config file path |
 
+`--build-cache` runs `docker builder prune --force --keep-storage <size>` after the environment teardown, so cache entries freed by removed images are actually reclaimable. It keeps the most recent `<size>` of cache — enough that the next build stays warm — instead of the scorched-earth `docker system prune -a` that makes the next `setup` a cold multi-gigabyte build.
+
 ### `oad doctor`
 
-Environment health report (`✓`/`✗` per check, or `--json`): Docker daemon responsive, Compose is v2, Node satisfies the package engine range, config discovery + validation (soft when absent), context derivation, Odoo port free or its holder identified, port collisions among known stacks, state registry path/openability/writability, image input/freshness checks, template snapshot freshness, git on PATH, WSL2 detection with setup guidance, and the current prune-candidate count. Exits 1 if any hard check fails.
+Environment health report (`✓`/`✗` per check, or `--json`): Docker daemon responsive, Compose is v2, Node satisfies the package engine range, Docker network-pool pressure (allocations in the constrained default `172.16/12` pool, with remediation guidance), config discovery + validation (soft when absent), context derivation, Odoo port free or its holder identified, port collisions among known stacks, state registry path/openability/writability, image input/freshness checks, template snapshot freshness, git on PATH, WSL2 detection with setup guidance, and the current prune-candidate count. Exits 1 if any hard check fails.
 
 | Flag | Meaning |
 | --- | --- |
@@ -555,11 +551,25 @@ The registry is an index — Docker is the truth. Generated compose files stamp 
 ```ts
 cleanup: {
   maxAgeDays: 30,  // staleness threshold used by the auto/warn hook
-  auto: false      // false (default): warn only; true: prune automatically
+  auto: true       // true (default): prune automatically; false: warn only
 }
 ```
 
-At the end of `up` and `setup`, the registry is checked for dead environments of the current project. With `auto: false` (the default) a one-line warning is printed when candidates exist (`N stale environment(s) — run odoo-agentic-dev prune`). With `auto: true` the prune routine runs immediately for gone/vanished environments and those unused for more than `maxAgeDays`, never touching shared environments or the environment the command is running in, and prints what it removed.
+At the end of `up` and `setup`, the registry is checked for dead environments of the current project. With `auto: true` (the default) the prune routine runs immediately for gone/vanished environments and those unused for more than `maxAgeDays`, never touching shared environments or the environment the command is running in, and prints what it removed. With `auto: false` a one-line warning is printed when candidates exist (`N stale environment(s) — run odoo-agentic-dev prune`).
+
+### Docker disk & network hygiene
+
+One environment per branch multiplies Docker resources, and two of them are bounded by daemon-level settings oad cannot change for you. Both live in Docker Desktop → Settings → Docker Engine (or `/etc/docker/daemon.json`):
+
+```json
+{
+  "default-address-pools": [{ "base": "10.201.0.0/16", "size": 24 }],
+  "builder": { "gc": { "enabled": true, "defaultKeepStorage": "10GB" } }
+}
+```
+
+- **Network pools.** Docker's stock config allocates one `/16` per compose network from a pool of ~15; with one network per worktree, that exhausts fast ("could not find an available, non-overlapping IPv4 address pool"). A `/24` per network from a `10.x` base gives 256 slots. `oad doctor` warns when the default pool is nearly full.
+- **Build cache.** BuildKit's cache grows unbounded by default on some setups; the daemon GC policy above bounds it durably. For a one-off reclaim there is `oad prune --build-cache --yes`.
 
 ## Network Exposure
 

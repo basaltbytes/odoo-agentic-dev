@@ -56,7 +56,7 @@ describe("normalizeConfig", () => {
     expect(cfg.project.sharedBranches).toEqual([]);
     expect(cfg.compose.file).toBeNull();
     expect(cfg.companionApps).toEqual([]);
-    expect(cfg.cleanup).toEqual({ maxAgeDays: 30, auto: false });
+    expect(cfg.cleanup).toEqual({ maxAgeDays: 30, auto: true });
   });
 
   it("defaults project.stripBranchPrefixes to the built-in type segments", () => {
@@ -128,8 +128,8 @@ describe("normalizeConfig", () => {
   });
 
   it("honors explicit cleanup settings", () => {
-    const cfg = runSyncSuccess(normalized({ ...minimal, cleanup: { maxAgeDays: 7, auto: true } }));
-    expect(cfg.cleanup).toEqual({ maxAgeDays: 7, auto: true });
+    const cfg = runSyncSuccess(normalized({ ...minimal, cleanup: { maxAgeDays: 7, auto: false } }));
+    expect(cfg.cleanup).toEqual({ maxAgeDays: 7, auto: false });
   });
 
   it("rejects unsafe cleanup ages", () => {
