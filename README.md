@@ -370,13 +370,14 @@ Browser-based Odoo suites can be skipped by Odoo itself when the image is missin
 
 ### `oad link-source`
 
-Create or refresh a local Odoo source pointer such as `.odoo` (a symlink on macOS/Linux/WSL2). Resolution order: `--target`, then the recipe's `odoo.source` (unless it is `"docker-only"`) — both used as-is without validation — then discovery: the conventional `../odoo` sibling checkout, then `<dirname>/odoo` next to every git worktree of the project. A discovered candidate counts only if it looks like an Odoo source checkout (contains `odoo-bin`, `odoo/` and `addons/`); when none qualifies the error lists every candidate checked. It refuses to overwrite anything that is not a symlink, and replaces an existing symlink only with `--force`. The runtime never requires this link; it exists for IDE navigation and direct source inspection.
+Create or refresh a local Odoo source pointer such as `.odoo` (a symlink on macOS/Linux/WSL2). Resolution order: `--target`, then the recipe's `odoo.source` (unless it is `"docker-only"`) — both used as-is without validation — then discovery: the conventional `../odoo` sibling checkout, then `<dirname>/odoo` next to every git worktree of the project. A discovered candidate counts only if it looks like an Odoo source checkout (contains `odoo-bin`, `odoo/` and `addons/`); when none qualifies the error lists every candidate checked. An existing symlink that already resolves to the selected valid checkout succeeds unchanged. Broken, invalid, or conflicting symlinks require `--force`; real files and directories are never overwritten. The runtime never requires this link; it exists for IDE navigation and direct source inspection.
 
 | Flag | Meaning |
 | --- | --- |
 | `--target <path>` | explicit source checkout path (absolute or relative to the project root) |
 | `--name <link-name>` | link name (default `.odoo`) |
-| `--force` | replace an existing symlink |
+| `--force` | replace a broken, invalid, or conflicting symlink |
+| `--json` | print one machine-readable result, including `changed`, `source`, and `linkPath` |
 | `--config <path>` | explicit config file path |
 
 ### `oad list`

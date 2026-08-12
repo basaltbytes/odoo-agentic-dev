@@ -1,11 +1,12 @@
-import { existsSync, lstatSync, statSync, symlinkSync, unlinkSync } from "node:fs";
+import { existsSync, lstatSync, realpathSync, statSync, symlinkSync, unlinkSync } from "node:fs";
 import type { Stats } from "node:fs";
 import { dirname, isAbsolute, join, resolve } from "node:path";
-import { Console, Effect, Option } from "effect";
+import { Effect, Option } from "effect";
 import { Command, Flag } from "effect/unstable/cli";
 import { SourceResolverError } from "../errors/errors.js";
 import { CommandRunner } from "../platform/command-runner.js";
 import type { CommandRunnerApi } from "../platform/command-runner.js";
+import { withJsonReport } from "./json-report.js";
 import { resolveContext } from "./resolve-context.js";
 
 const tryFs = <A>(thunk: () => A): Effect.Effect<A, SourceResolverError> =>
@@ -65,13 +66,19 @@ export const discoverOdooCheckout = (
     return { resolved: candidates.find(looksLikeOdooCheckout), candidates };
   });
 
+export type LinkSourceResult = {
+  readonly linkPath: string;
+  readonly source: string;
+  readonly changed: boolean;
+};
+
 export const performLinkSource = (options: {
   readonly rootDir: string;
   readonly target: string | undefined;
   readonly name: string;
   readonly force: boolean;
   readonly recipeSource: string | null;
-}): Effect.Effect<string, SourceResolverError, CommandRunnerApi> =>
+}): Effect.Effect<LinkSourceResult, SourceResolverError, CommandRunnerApi> =>
   Effect.gen(function* () {
     // explicit wins and skips validation: --target, then odoo.source
     const configured =
@@ -117,6 +124,15 @@ export const performLinkSource = (options: {
         );
       }
       if (!options.force) {
+        const alreadyLinked = (() => {
+          try {
+            const actualSource = realpathSync(linkPath);
+            return actualSource === realpathSync(resolved) && looksLikeOdooCheckout(actualSource);
+          } catch {
+            return false;
+          }
+        })();
+        if (alreadyLinked) return { linkPath, source: resolved, changed: false };
         return yield* Effect.fail(
           new SourceResolverError({
             reason: `${linkPath} already exists; pass --force to replace it`,
@@ -126,7 +142,7 @@ export const performLinkSource = (options: {
       yield* tryFs(() => unlinkSync(linkPath));
     }
     yield* tryFs(() => symlinkSync(resolved, linkPath));
-    return linkPath;
+    return { linkPath, source: resolved, changed: true };
   });
 
 export const linkSourceCommand = Command.make(
@@ -135,18 +151,29 @@ export const linkSourceCommand = Command.make(
     target: Flag.string("target").pipe(Flag.optional),
     name: Flag.string("name").pipe(Flag.withDefault(".odoo")),
     force: Flag.boolean("force"),
+    json: Flag.boolean("json").pipe(Flag.withDescription("print machine-readable JSON")),
     config: Flag.string("config").pipe(Flag.optional),
   },
   (flags) =>
-    Effect.gen(function* () {
-      const { ctx, recipe } = yield* resolveContext(flags.config);
-      const linkPath = yield* performLinkSource({
-        rootDir: ctx.rootDir,
-        target: Option.getOrUndefined(flags.target),
-        name: flags.name,
-        force: flags.force,
-        recipeSource: recipe.odoo.source,
-      });
-      yield* Console.log(`Linked ${linkPath} -> resolved Odoo source`);
-    }),
+    withJsonReport("link-source", flags.json, (report) =>
+      Effect.gen(function* () {
+        const { ctx, recipe } = yield* resolveContext(flags.config);
+        yield* report.setContext(ctx);
+        const result = yield* performLinkSource({
+          rootDir: ctx.rootDir,
+          target: Option.getOrUndefined(flags.target),
+          name: flags.name,
+          force: flags.force,
+          recipeSource: recipe.odoo.source,
+        });
+        yield* report.setExtra("changed", result.changed);
+        yield* report.setExtra("source", result.source);
+        yield* report.setExtra("linkPath", result.linkPath);
+        yield* report.say(
+          result.changed
+            ? `Linked ${result.linkPath} -> ${result.source}`
+            : `${result.linkPath} already points to ${result.source}; no change required.`,
+        );
+      }),
+    ),
 ).pipe(Command.withDescription("symlink a local Odoo checkout for editor navigation"));
