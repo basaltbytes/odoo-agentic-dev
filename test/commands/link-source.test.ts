@@ -10,7 +10,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, relative } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { Effect } from "effect";
 import {
@@ -195,7 +195,7 @@ describe("performLinkSource", () => {
 
     expect(result.changed).toBe(false);
     expect(result.source).toBe(source);
-    expect(readlinkSync(result.linkPath)).toBe("../odoo-src");
+    expect(readlinkSync(result.linkPath)).toBe(relative(dirname(result.linkPath), source));
   });
 
   it("creates a .odoo symlink to an explicit target without validating it", async () => {
