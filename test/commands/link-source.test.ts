@@ -1,4 +1,5 @@
 import {
+  chmodSync,
   lstatSync,
   mkdirSync,
   mkdtempSync,
@@ -41,6 +42,7 @@ const makeDirs = () => {
 const makeFakeOdooCheckout = (path: string) => {
   mkdirSync(path, { recursive: true });
   writeFileSync(join(path, "odoo-bin"), "#!/usr/bin/env python3\n");
+  chmodSync(join(path, "odoo-bin"), 0o755);
   mkdirSync(join(path, "odoo"));
   mkdirSync(join(path, "addons"));
 };
@@ -59,10 +61,8 @@ const runnerWithWorktrees = (worktrees: Array<string>) =>
       : undefined,
   );
 
-const link = (
-  options: Parameters<typeof performLinkSource>[0],
-  worktrees: Array<string> = [],
-): Promise<string> => runWith(runnerWithWorktrees(worktrees).layer)(performLinkSource(options));
+const link = (options: Parameters<typeof performLinkSource>[0], worktrees: Array<string> = []) =>
+  runWith(runnerWithWorktrees(worktrees).layer)(performLinkSource(options));
 
 describe("looksLikeOdooCheckout", () => {
   it("requires odoo-bin plus odoo/ and addons/ directories", () => {
@@ -152,10 +152,56 @@ describe("discoverOdooCheckout", () => {
 });
 
 describe("performLinkSource", () => {
+  it("succeeds unchanged when invoked twice for the same valid checkout", async () => {
+    const { project, source } = makeDirs();
+    makeFakeOdooCheckout(source);
+    const options = {
+      rootDir: project,
+      target: source,
+      name: ".odoo",
+      force: false,
+      recipeSource: null,
+    } as const;
+
+    const first = await link(options);
+    expect(first).toMatchObject({
+      linkPath: join(project, ".odoo"),
+      source,
+      changed: true,
+    });
+    const storedTarget = readlinkSync(join(project, ".odoo"));
+    const second = await link(options);
+
+    expect(second).toMatchObject({
+      linkPath: join(project, ".odoo"),
+      source,
+      changed: false,
+    });
+    expect(readlinkSync(join(project, ".odoo"))).toBe(storedTarget);
+  });
+
+  it("accepts a pre-existing relative symlink to the same valid checkout", async () => {
+    const { project, source } = makeDirs();
+    makeFakeOdooCheckout(source);
+    symlinkSync("../odoo-src", join(project, ".odoo"));
+
+    const result = await link({
+      rootDir: project,
+      target: source,
+      name: ".odoo",
+      force: false,
+      recipeSource: null,
+    });
+
+    expect(result.changed).toBe(false);
+    expect(result.source).toBe(source);
+    expect(readlinkSync(result.linkPath)).toBe("../odoo-src");
+  });
+
   it("creates a .odoo symlink to an explicit target without validating it", async () => {
     const { project, source } = makeDirs();
     // source is a plain directory — NOT a valid checkout; explicit wins anyway
-    const linkPath = await link({
+    const { linkPath } = await link({
       rootDir: project,
       target: source,
       name: ".odoo",
@@ -175,9 +221,20 @@ describe("performLinkSource", () => {
     ).rejects.toThrow(/refusing to overwrite/);
   });
 
-  it("replaces an existing symlink only with force", async () => {
+  it("refuses to overwrite a regular file", async () => {
     const { project, source } = makeDirs();
-    symlinkSync(project, join(project, ".odoo"));
+    writeFileSync(join(project, ".odoo"), "keep me\n");
+    await expect(
+      link({ rootDir: project, target: source, name: ".odoo", force: false, recipeSource: null }),
+    ).rejects.toThrow(/refusing to overwrite/);
+  });
+
+  it("replaces a link to a different valid checkout only with force", async () => {
+    const { project, root, source } = makeDirs();
+    const otherSource = join(root, "other-odoo-src");
+    makeFakeOdooCheckout(source);
+    makeFakeOdooCheckout(otherSource);
+    symlinkSync(otherSource, join(project, ".odoo"));
     await expect(
       link({ rootDir: project, target: source, name: ".odoo", force: false, recipeSource: null }),
     ).rejects.toThrow(/--force/);
@@ -191,9 +248,42 @@ describe("performLinkSource", () => {
     expect(readlinkSync(join(project, ".odoo"))).toBe(source);
   });
 
+  it("refuses a broken existing symlink without force", async () => {
+    const { project, root, source } = makeDirs();
+    makeFakeOdooCheckout(source);
+    symlinkSync(join(root, "missing"), join(project, ".odoo"));
+
+    await expect(
+      link({ rootDir: project, target: source, name: ".odoo", force: false, recipeSource: null }),
+    ).rejects.toThrow(/--force/);
+  });
+
+  it("refuses an existing link to the same invalid source without force", async () => {
+    const { project, source } = makeDirs();
+    symlinkSync(source, join(project, ".odoo"));
+
+    await expect(
+      link({ rootDir: project, target: source, name: ".odoo", force: false, recipeSource: null }),
+    ).rejects.toThrow(/--force/);
+  });
+
+  it("rejects a missing explicit target", async () => {
+    const { project, root } = makeDirs();
+
+    await expect(
+      link({
+        rootDir: project,
+        target: join(root, "missing"),
+        name: ".odoo",
+        force: false,
+        recipeSource: null,
+      }),
+    ).rejects.toThrow(/resolved source path does not exist/);
+  });
+
   it("falls back to recipe source (no validation), then discovery", async () => {
     const { project, source } = makeDirs();
-    const linkPath = await link({
+    const { linkPath } = await link({
       rootDir: project,
       target: undefined,
       name: ".odoo",
@@ -210,7 +300,7 @@ describe("performLinkSource", () => {
     tmp.push(elsewhere);
     mkdirSync(join(elsewhere, "wt"));
     makeFakeOdooCheckout(join(elsewhere, "odoo"));
-    const linkPath = await link(
+    const { linkPath } = await link(
       { rootDir: project, target: undefined, name: ".odoo", force: false, recipeSource: null },
       [join(elsewhere, "wt")],
     );

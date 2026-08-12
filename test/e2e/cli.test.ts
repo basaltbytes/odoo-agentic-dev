@@ -1,5 +1,13 @@
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
@@ -119,6 +127,27 @@ export default {
       applied: false,
       candidates: [],
       removed: [],
+    });
+  });
+
+  it("link-source --json reports an unchanged repeated valid link as one success result", () => {
+    const source = join(dir, "odoo-source");
+    mkdirSync(join(source, "odoo"), { recursive: true });
+    mkdirSync(join(source, "addons"));
+    writeFileSync(join(source, "odoo-bin"), "#!/usr/bin/env python3\n");
+    chmodSync(join(source, "odoo-bin"), 0o755);
+    const args = ["link-source", "--target", source, "--name", ".odoo-idempotent"];
+
+    expect(spawn(args).status).toBe(0);
+    const repeated = spawn([...args, "--json"]);
+
+    expect(repeated.status).toBe(0);
+    expect(JSON.parse(repeated.stdout)).toMatchObject({
+      ok: true,
+      command: "link-source",
+      changed: false,
+      source,
+      linkPath: join(realpathSync(dir), ".odoo-idempotent"),
     });
   });
 
