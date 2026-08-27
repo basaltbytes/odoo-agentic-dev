@@ -1,0 +1,21 @@
+name: setup-pnpm
+description: >-
+  Install the exact pnpm version pinned in package.json devEngines, then Node
+  with the pnpm store cache. A floating range (e.g. "11") resolves to the
+  newest release, and pnpm >= 11.23 rewrites the lockfile with a
+  packageManagerDependencies section before delegating to the devEngines
+  version, which fails under --frozen-lockfile.
+inputs:
+  node-version:
+    description: Node.js version passed to actions/setup-node
+    required: true
+runs:
+  using: composite
+  steps:
+    - id: pnpm
+      shell: bash
+      run: echo "version=$(node -p "require('./package.json').devEngines.packageManager.version")" >> "$GITHUB_OUTPUT"
+    - uses: pnpm/action-setup@v4
+      with: { version: "${{ steps.pnpm.outputs.version }}" }
+    - uses: actions/setup-node@v4
+      with: { node-version: "${{ inputs.node-version }}", cache: pnpm }
