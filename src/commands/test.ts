@@ -126,14 +126,17 @@ export const testCommand = Command.make(
       Flag.withDescription("recipe-defined test profile"),
     ),
     build: Flag.boolean("build").pipe(
+      Flag.withDefault(false),
       Flag.withDescription("rebuild the Odoo image before running the test container"),
     ),
     includeDemo: Flag.boolean("include-demo").pipe(
+      Flag.withDefault(false),
       Flag.withDescription(
         "accepted for compatibility; demo data is controlled at database init in v1",
       ),
     ),
     json: Flag.boolean("json").pipe(
+      Flag.withDefault(false),
       Flag.withDescription("suppress decorative output; print one final JSON report line"),
     ),
     config: Flag.string("config").pipe(Flag.optional),

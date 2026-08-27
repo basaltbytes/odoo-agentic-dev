@@ -36,7 +36,10 @@ export const logsCommand = Command.make(
       Argument.optional,
       Argument.withDescription("compose service (defaults to the odoo service)"),
     ),
-    follow: Flag.boolean("follow").pipe(Flag.withDescription("follow log output")),
+    follow: Flag.boolean("follow").pipe(
+      Flag.withDefault(false),
+      Flag.withDescription("follow log output"),
+    ),
     config: Flag.string("config").pipe(Flag.optional),
   },
   (flags) =>

@@ -175,9 +175,13 @@ export const initCommand = Command.make(
       Flag.withDescription(`Odoo version (default ${DEFAULT_ODOO_VERSION})`),
     ),
     force: Flag.boolean("force").pipe(
+      Flag.withDefault(false),
       Flag.withDescription("overwrite an existing config in the current directory"),
     ),
-    json: Flag.boolean("json").pipe(Flag.withDescription("print machine-readable JSON")),
+    json: Flag.boolean("json").pipe(
+      Flag.withDefault(false),
+      Flag.withDescription("print machine-readable JSON"),
+    ),
   },
   (flags) =>
     Effect.gen(function* () {

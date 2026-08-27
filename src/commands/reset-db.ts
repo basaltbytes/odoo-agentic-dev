@@ -184,8 +184,9 @@ export const ensureFreshTemplateForTests = (
 export const resetDbCommand = Command.make(
   "reset-db",
   {
-    allowShared: Flag.boolean("allow-shared"),
+    allowShared: Flag.boolean("allow-shared").pipe(Flag.withDefault(false)),
     build: Flag.boolean("build").pipe(
+      Flag.withDefault(false),
       Flag.withDescription("rebuild the Odoo image before running reset containers"),
     ),
     modules: Flag.string("modules").pipe(
@@ -194,12 +195,15 @@ export const resetDbCommand = Command.make(
     ),
     withoutDemo: Flag.string("without-demo").pipe(Flag.optional),
     noTemplate: Flag.boolean("no-template").pipe(
+      Flag.withDefault(false),
       Flag.withDescription("full init even when a template snapshot exists (template kept)"),
     ),
     refreshTemplate: Flag.boolean("refresh-template").pipe(
+      Flag.withDefault(false),
       Flag.withDescription("full init and take a fresh template snapshot"),
     ),
     json: Flag.boolean("json").pipe(
+      Flag.withDefault(false),
       Flag.withDescription("suppress decorative output; print one final JSON report line"),
     ),
     config: Flag.string("config").pipe(Flag.optional),

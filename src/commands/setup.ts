@@ -133,19 +133,23 @@ export const runSetup = (
 export const setupCommand = Command.make(
   "setup",
   {
-    skipInstall: Flag.boolean("skip-install"),
-    skipDb: Flag.boolean("skip-db"),
-    allowShared: Flag.boolean("allow-shared"),
+    skipInstall: Flag.boolean("skip-install").pipe(Flag.withDefault(false)),
+    skipDb: Flag.boolean("skip-db").pipe(Flag.withDefault(false)),
+    allowShared: Flag.boolean("allow-shared").pipe(Flag.withDefault(false)),
     noTemplate: Flag.boolean("no-template").pipe(
+      Flag.withDefault(false),
       Flag.withDescription("full init even when a template snapshot exists (template kept)"),
     ),
     refreshTemplate: Flag.boolean("refresh-template").pipe(
+      Flag.withDefault(false),
       Flag.withDescription("full init and take a fresh template snapshot"),
     ),
     build: Flag.boolean("build").pipe(
+      Flag.withDefault(false),
       Flag.withDescription("force the image build even when inputs are unchanged"),
     ),
     json: Flag.boolean("json").pipe(
+      Flag.withDefault(false),
       Flag.withDescription("suppress decorative output; print one final JSON report line"),
     ),
     config: Flag.string("config").pipe(Flag.optional),

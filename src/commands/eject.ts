@@ -423,12 +423,17 @@ export const ejectCommand = Command.make(
       Flag.withDescription(`ejected compose path (default ${DEFAULT_COMPOSE_OUT})`),
     ),
     force: Flag.boolean("force").pipe(
+      Flag.withDefault(false),
       Flag.withDescription("overwrite existing files / commented config"),
     ),
     writeConfig: Flag.boolean("write-config").pipe(
+      Flag.withDefault(false),
       Flag.withDescription("rewrite the config in place (comments are lost)"),
     ),
-    json: Flag.boolean("json").pipe(Flag.withDescription("print machine-readable JSON")),
+    json: Flag.boolean("json").pipe(
+      Flag.withDefault(false),
+      Flag.withDescription("print machine-readable JSON"),
+    ),
     config: Flag.string("config").pipe(
       Flag.optional,
       Flag.withDescription("explicit config file path"),

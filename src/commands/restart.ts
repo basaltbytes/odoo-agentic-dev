@@ -132,10 +132,15 @@ export const restartCommand = Command.make(
   "restart",
   {
     rebuild: Flag.boolean("rebuild").pipe(
+      Flag.withDefault(false),
       Flag.withDescription("rebuild the Odoo image, remove the Odoo container, and recreate it"),
     ),
-    logs: Flag.boolean("logs").pipe(Flag.withDescription("follow Odoo logs after restart")),
+    logs: Flag.boolean("logs").pipe(
+      Flag.withDefault(false),
+      Flag.withDescription("follow Odoo logs after restart"),
+    ),
     json: Flag.boolean("json").pipe(
+      Flag.withDefault(false),
       Flag.withDescription("suppress decorative output; print one final JSON report line"),
     ),
     config: Flag.string("config").pipe(Flag.optional),
