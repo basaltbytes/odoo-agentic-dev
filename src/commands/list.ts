@@ -136,9 +136,13 @@ export const listCommand = Command.make(
   "list",
   {
     allProjects: Flag.boolean("all-projects").pipe(
+      Flag.withDefault(false),
       Flag.withDescription("every project in the registry (works without a config)"),
     ),
-    json: Flag.boolean("json").pipe(Flag.withDescription("print machine-readable JSON")),
+    json: Flag.boolean("json").pipe(
+      Flag.withDefault(false),
+      Flag.withDescription("print machine-readable JSON"),
+    ),
     config: Flag.string("config").pipe(Flag.optional),
   },
   (flags) =>

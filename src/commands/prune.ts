@@ -209,20 +209,26 @@ export const pruneCommand = Command.make(
       Flag.withDescription("also prune environments unused for more than <days>"),
     ),
     allProjects: Flag.boolean("all-projects").pipe(
+      Flag.withDefault(false),
       Flag.withDescription("every project in the registry (works without a config)"),
     ),
     yes: Flag.boolean("yes").pipe(
+      Flag.withDefault(false),
       Flag.withDescription("actually remove (without it: dry run, exit 1 when candidates exist)"),
     ),
     buildCache: Flag.boolean("build-cache").pipe(
+      Flag.withDefault(false),
       Flag.withDescription("also prune the Docker build cache down to --keep-storage (with --yes)"),
     ),
     keepStorage: Flag.string("keep-storage").pipe(
       Flag.optional,
       Flag.withDescription("build-cache size floor to keep (default 10GB)"),
     ),
-    allowShared: Flag.boolean("allow-shared"),
-    json: Flag.boolean("json").pipe(Flag.withDescription("print machine-readable JSON")),
+    allowShared: Flag.boolean("allow-shared").pipe(Flag.withDefault(false)),
+    json: Flag.boolean("json").pipe(
+      Flag.withDefault(false),
+      Flag.withDescription("print machine-readable JSON"),
+    ),
     config: Flag.string("config").pipe(Flag.optional),
   },
   (flags) =>

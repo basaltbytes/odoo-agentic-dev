@@ -482,6 +482,7 @@ const createCommand = Command.make(
       Flag.withDescription("base ref (default: $ODOO_WORKTREE_BASE_REF, origin HEAD, or HEAD)"),
     ),
     hookJson: Flag.boolean("hook-json").pipe(
+      Flag.withDefault(false),
       Flag.withDescription(
         "Claude Code hook mode: read {worktree_name, worktree_path} JSON from stdin; stdout carries only the final path",
       ),
@@ -550,11 +551,12 @@ const removeCommand = Command.make(
       Argument.withDescription("worktree directory (omit with --hook-json)"),
     ),
     hookJson: Flag.boolean("hook-json").pipe(
+      Flag.withDefault(false),
       Flag.withDescription(
         "Claude Code hook mode: read {worktree_path} JSON from stdin and always exit 0",
       ),
     ),
-    allowShared: Flag.boolean("allow-shared"),
+    allowShared: Flag.boolean("allow-shared").pipe(Flag.withDefault(false)),
     logFile: Flag.string("log-file").pipe(
       Flag.optional,
       Flag.withDescription("append step logs to this file (its directory is created)"),

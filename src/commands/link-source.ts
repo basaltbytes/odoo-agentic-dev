@@ -150,8 +150,11 @@ export const linkSourceCommand = Command.make(
   {
     target: Flag.string("target").pipe(Flag.optional),
     name: Flag.string("name").pipe(Flag.withDefault(".odoo")),
-    force: Flag.boolean("force"),
-    json: Flag.boolean("json").pipe(Flag.withDescription("print machine-readable JSON")),
+    force: Flag.boolean("force").pipe(Flag.withDefault(false)),
+    json: Flag.boolean("json").pipe(
+      Flag.withDefault(false),
+      Flag.withDescription("print machine-readable JSON"),
+    ),
     config: Flag.string("config").pipe(Flag.optional),
   },
   (flags) =>

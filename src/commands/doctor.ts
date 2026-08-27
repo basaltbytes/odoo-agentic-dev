@@ -543,9 +543,13 @@ export const doctorCommand = Command.make(
   "doctor",
   {
     deep: Flag.boolean("deep").pipe(
+      Flag.withDefault(false),
       Flag.withDescription("run slower container probes such as browser-test dependency checks"),
     ),
-    json: Flag.boolean("json").pipe(Flag.withDescription("print machine-readable JSON")),
+    json: Flag.boolean("json").pipe(
+      Flag.withDefault(false),
+      Flag.withDescription("print machine-readable JSON"),
+    ),
     config: Flag.string("config").pipe(Flag.optional),
   },
   (flags) =>

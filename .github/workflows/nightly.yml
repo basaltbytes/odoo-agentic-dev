@@ -21,10 +21,8 @@ jobs:
         run: |
           echo "ODOO_AGENTIC_DEV_STATE_DB=$RUNNER_TEMP/oad-state/state.db" >> "$GITHUB_ENV"
           echo "FIXTURE=$RUNNER_TEMP/nightly-fixture" >> "$GITHUB_ENV"
-      - uses: pnpm/action-setup@v4
-        with: { version: 11 }
-      - uses: actions/setup-node@v4
-        with: { node-version: 22, cache: pnpm }
+      - uses: ./.github/actions/setup-pnpm
+        with: { node-version: 22 }
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
       - name: Create fixture project (odoo:18 + postgres:16)

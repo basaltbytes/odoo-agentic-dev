@@ -77,10 +77,12 @@ export const downCommand = Command.make(
   "down",
   {
     volumes: Flag.boolean("volumes").pipe(
+      Flag.withDefault(false),
       Flag.withDescription("also remove this worktree's volumes"),
     ),
-    allowShared: Flag.boolean("allow-shared"),
+    allowShared: Flag.boolean("allow-shared").pipe(Flag.withDefault(false)),
     json: Flag.boolean("json").pipe(
+      Flag.withDefault(false),
       Flag.withDescription("suppress decorative output; print one final JSON report line"),
     ),
     config: Flag.string("config").pipe(Flag.optional),
