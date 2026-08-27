@@ -8,6 +8,12 @@ on:
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 jobs:
+  # The full ci.yml gate. Its npm-package job installs the packed tarball with
+  # npm, which resolves dependencies fresh (no pnpm lockfile) — the only check
+  # that sees what users actually get, so upstream drift (effect rc releases,
+  # pnpm) surfaces the next morning rather than on the next push.
+  checks:
+    uses: ./.github/workflows/ci.yml
   real-odoo:
     runs-on: ubuntu-latest
     timeout-minutes: 25
