@@ -37,6 +37,8 @@ cd "$PROJECT"
 
 npm init -y >/dev/null
 npm install --ignore-scripts --no-audit --no-fund "$TARBALL" >/dev/null
+# Show the fresh resolution and reject invalid peers before exercising the CLI.
+npm ls --all effect @effect/platform-node @effect/platform-node-shared
 
 BIN="$PROJECT/node_modules/.bin/oad"
 
