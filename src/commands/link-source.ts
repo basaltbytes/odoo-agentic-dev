@@ -148,14 +148,14 @@ export const performLinkSource = (options: {
 export const linkSourceCommand = Command.make(
   "link-source",
   {
-    target: Flag.string("target").pipe(Flag.optional),
-    name: Flag.string("name").pipe(Flag.withDefault(".odoo")),
-    force: Flag.boolean("force").pipe(Flag.withDefault(false)),
-    json: Flag.boolean("json").pipe(
+    target: Flag.String("target").pipe(Flag.optional),
+    name: Flag.String("name").pipe(Flag.withDefault(".odoo")),
+    force: Flag.Boolean("force").pipe(Flag.withDefault(false)),
+    json: Flag.Boolean("json").pipe(
       Flag.withDefault(false),
       Flag.withDescription("print machine-readable JSON"),
     ),
-    config: Flag.string("config").pipe(Flag.optional),
+    config: Flag.String("config").pipe(Flag.optional),
   },
   (flags) =>
     withJsonReport("link-source", flags.json, (report) =>

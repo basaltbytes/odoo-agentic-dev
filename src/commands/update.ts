@@ -9,17 +9,17 @@ import { withJsonReport } from "./json-report.js";
 export const updateCommand = Command.make(
   "update",
   {
-    modules: Argument.string("modules"),
-    noRestart: Flag.boolean("no-restart").pipe(Flag.withDefault(false)),
-    build: Flag.boolean("build").pipe(
+    modules: Argument.String("modules"),
+    noRestart: Flag.Boolean("no-restart").pipe(Flag.withDefault(false)),
+    build: Flag.Boolean("build").pipe(
       Flag.withDefault(false),
       Flag.withDescription("rebuild the Odoo image before running the update container"),
     ),
-    json: Flag.boolean("json").pipe(
+    json: Flag.Boolean("json").pipe(
       Flag.withDefault(false),
       Flag.withDescription("suppress decorative output; print one final JSON report line"),
     ),
-    config: Flag.string("config").pipe(Flag.optional),
+    config: Flag.String("config").pipe(Flag.optional),
   },
   (flags) =>
     withJsonReport("update", flags.json, (report) =>

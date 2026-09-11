@@ -469,25 +469,25 @@ export const runWorktreeRemoveHook = (options: {
 const createCommand = Command.make(
   "create",
   {
-    name: Argument.string("name").pipe(
+    name: Argument.String("name").pipe(
       Argument.optional,
       Argument.withDescription("worktree name (omit with --hook-json)"),
     ),
-    path: Flag.string("path").pipe(
+    path: Flag.String("path").pipe(
       Flag.optional,
       Flag.withDescription("worktree directory (default: sibling <repo-basename>-<name>)"),
     ),
-    base: Flag.string("base").pipe(
+    base: Flag.String("base").pipe(
       Flag.optional,
       Flag.withDescription("base ref (default: $ODOO_WORKTREE_BASE_REF, origin HEAD, or HEAD)"),
     ),
-    hookJson: Flag.boolean("hook-json").pipe(
+    hookJson: Flag.Boolean("hook-json").pipe(
       Flag.withDefault(false),
       Flag.withDescription(
         "Claude Code hook mode: read {worktree_name, worktree_path} JSON from stdin; stdout carries only the final path",
       ),
     ),
-    config: Flag.string("config").pipe(Flag.optional),
+    config: Flag.String("config").pipe(Flag.optional),
   },
   (flags) =>
     Effect.gen(function* () {
@@ -546,22 +546,22 @@ const createCommand = Command.make(
 const removeCommand = Command.make(
   "remove",
   {
-    path: Argument.string("path").pipe(
+    path: Argument.String("path").pipe(
       Argument.optional,
       Argument.withDescription("worktree directory (omit with --hook-json)"),
     ),
-    hookJson: Flag.boolean("hook-json").pipe(
+    hookJson: Flag.Boolean("hook-json").pipe(
       Flag.withDefault(false),
       Flag.withDescription(
         "Claude Code hook mode: read {worktree_path} JSON from stdin and always exit 0",
       ),
     ),
-    allowShared: Flag.boolean("allow-shared").pipe(Flag.withDefault(false)),
-    logFile: Flag.string("log-file").pipe(
+    allowShared: Flag.Boolean("allow-shared").pipe(Flag.withDefault(false)),
+    logFile: Flag.String("log-file").pipe(
       Flag.optional,
       Flag.withDescription("append step logs to this file (its directory is created)"),
     ),
-    config: Flag.string("config").pipe(Flag.optional),
+    config: Flag.String("config").pipe(Flag.optional),
   },
   (flags) =>
     Effect.gen(function* () {

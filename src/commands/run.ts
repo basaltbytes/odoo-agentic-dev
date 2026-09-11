@@ -88,17 +88,17 @@ export const runHostCommand = (
 export const runCommand = Command.make(
   "run",
   {
-    argv: Argument.string("command").pipe(
+    argv: Argument.String("command").pipe(
       Argument.variadic(),
       Argument.withDescription("host command and its arguments (pass them after --)"),
     ),
-    envFile: Flag.string("env-file").pipe(
+    envFile: Flag.String("env-file").pipe(
       Flag.atLeast(0),
       Flag.withDescription(
         "dotenv-style file layered over the worktree env (repeatable; later files win)",
       ),
     ),
-    config: Flag.string("config").pipe(Flag.optional),
+    config: Flag.String("config").pipe(Flag.optional),
   },
   (flags) =>
     Effect.gen(function* () {

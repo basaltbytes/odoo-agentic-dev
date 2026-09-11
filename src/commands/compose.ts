@@ -27,11 +27,11 @@ export const runCompose = (
 export const composeCommand = Command.make(
   "compose",
   {
-    args: Argument.string("args").pipe(
+    args: Argument.String("args").pipe(
       Argument.variadic(),
       Argument.withDescription("docker compose arguments (pass them after --)"),
     ),
-    config: Flag.string("config").pipe(Flag.optional),
+    config: Flag.String("config").pipe(Flag.optional),
   },
   (flags) =>
     Effect.gen(function* () {

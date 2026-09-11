@@ -135,15 +135,15 @@ export const collectListEntries = (
 export const listCommand = Command.make(
   "list",
   {
-    allProjects: Flag.boolean("all-projects").pipe(
+    allProjects: Flag.Boolean("all-projects").pipe(
       Flag.withDefault(false),
       Flag.withDescription("every project in the registry (works without a config)"),
     ),
-    json: Flag.boolean("json").pipe(
+    json: Flag.Boolean("json").pipe(
       Flag.withDefault(false),
       Flag.withDescription("print machine-readable JSON"),
     ),
-    config: Flag.string("config").pipe(Flag.optional),
+    config: Flag.String("config").pipe(Flag.optional),
   },
   (flags) =>
     Effect.gen(function* () {

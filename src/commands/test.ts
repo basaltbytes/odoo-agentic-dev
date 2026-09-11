@@ -117,29 +117,29 @@ export const detectSkippedBrowserSuite = (output: {
 export const testCommand = Command.make(
   "test",
   {
-    tags: Flag.string("tags").pipe(Flag.optional),
-    file: Flag.string("file").pipe(Flag.optional),
-    module: Flag.string("module").pipe(Flag.optional),
-    logLevel: Flag.string("log-level").pipe(Flag.optional),
-    profile: Flag.string("profile").pipe(
+    tags: Flag.String("tags").pipe(Flag.optional),
+    file: Flag.String("file").pipe(Flag.optional),
+    module: Flag.String("module").pipe(Flag.optional),
+    logLevel: Flag.String("log-level").pipe(Flag.optional),
+    profile: Flag.String("profile").pipe(
       Flag.optional,
       Flag.withDescription("recipe-defined test profile"),
     ),
-    build: Flag.boolean("build").pipe(
+    build: Flag.Boolean("build").pipe(
       Flag.withDefault(false),
       Flag.withDescription("rebuild the Odoo image before running the test container"),
     ),
-    includeDemo: Flag.boolean("include-demo").pipe(
+    includeDemo: Flag.Boolean("include-demo").pipe(
       Flag.withDefault(false),
       Flag.withDescription(
         "accepted for compatibility; demo data is controlled at database init in v1",
       ),
     ),
-    json: Flag.boolean("json").pipe(
+    json: Flag.Boolean("json").pipe(
       Flag.withDefault(false),
       Flag.withDescription("suppress decorative output; print one final JSON report line"),
     ),
-    config: Flag.string("config").pipe(Flag.optional),
+    config: Flag.String("config").pipe(Flag.optional),
   },
   (flags) =>
     withJsonReport("test", flags.json, (report) =>

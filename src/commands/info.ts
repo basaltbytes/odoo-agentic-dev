@@ -40,15 +40,15 @@ export const buildInfoEnv = (ctx: WorktreeContext): string =>
 export const infoCommand = Command.make(
   "info",
   {
-    json: Flag.boolean("json").pipe(
+    json: Flag.Boolean("json").pipe(
       Flag.withDefault(false),
       Flag.withDescription("print machine-readable JSON"),
     ),
-    env: Flag.boolean("env").pipe(
+    env: Flag.Boolean("env").pipe(
       Flag.withDefault(false),
       Flag.withDescription("print KEY=value env lines"),
     ),
-    config: Flag.string("config").pipe(
+    config: Flag.String("config").pipe(
       Flag.optional,
       Flag.withDescription("explicit config file path"),
     ),

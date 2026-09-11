@@ -542,15 +542,15 @@ export const collectDoctorChecks = (
 export const doctorCommand = Command.make(
   "doctor",
   {
-    deep: Flag.boolean("deep").pipe(
+    deep: Flag.Boolean("deep").pipe(
       Flag.withDefault(false),
       Flag.withDescription("run slower container probes such as browser-test dependency checks"),
     ),
-    json: Flag.boolean("json").pipe(
+    json: Flag.Boolean("json").pipe(
       Flag.withDefault(false),
       Flag.withDescription("print machine-readable JSON"),
     ),
-    config: Flag.string("config").pipe(Flag.optional),
+    config: Flag.String("config").pipe(Flag.optional),
   },
   (flags) =>
     Effect.gen(function* () {
