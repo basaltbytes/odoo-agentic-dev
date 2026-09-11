@@ -4,7 +4,7 @@ import { ChildProcess } from "effect/unstable/process";
 import { Command, Flag } from "effect/unstable/cli";
 import { NodeServices } from "@effect/platform-node";
 
-describe("effect v4 beta API smoke test", () => {
+describe("effect v4 release candidate API smoke test", () => {
   it("runs a trivial effect", async () => {
     expect(await Effect.runPromise(Effect.succeed(41 + 1))).toBe(42);
   });
@@ -63,7 +63,7 @@ describe("effect v4 beta API smoke test", () => {
   });
 
   it("cli Command/Flag exist", () => {
-    const cmd = Command.make("x", { f: Flag.boolean("f") });
+    const cmd = Command.make("x", { f: Flag.Boolean("f") });
     expect(cmd).toBeDefined();
   });
 });

@@ -85,31 +85,31 @@ export const guardUpBuildFlags = (flags: {
 export const upCommand = Command.make(
   "up",
   {
-    odooOnly: Flag.boolean("odoo-only").pipe(
+    odooOnly: Flag.Boolean("odoo-only").pipe(
       Flag.withDefault(false),
       Flag.withDescription("skip companion apps"),
     ),
-    build: Flag.boolean("build").pipe(
+    build: Flag.Boolean("build").pipe(
       Flag.withDefault(false),
       Flag.withDescription("force the image build even when inputs are unchanged"),
     ),
-    noBuild: Flag.boolean("no-build").pipe(
+    noBuild: Flag.Boolean("no-build").pipe(
       Flag.withDefault(false),
       Flag.withDescription("never build; warn when the image looks stale"),
     ),
-    logs: Flag.boolean("logs").pipe(
+    logs: Flag.Boolean("logs").pipe(
       Flag.withDefault(false),
       Flag.withDescription("follow odoo logs after start"),
     ),
-    detach: Flag.boolean("detach").pipe(
+    detach: Flag.Boolean("detach").pipe(
       Flag.withDefault(false),
       Flag.withDescription("start containers and return"),
     ),
-    json: Flag.boolean("json").pipe(
+    json: Flag.Boolean("json").pipe(
       Flag.withDefault(false),
       Flag.withDescription("suppress decorative output; print one final JSON report line"),
     ),
-    config: Flag.string("config").pipe(Flag.optional),
+    config: Flag.String("config").pipe(Flag.optional),
   },
   (flags) =>
     withJsonReport("up", flags.json, (report) =>

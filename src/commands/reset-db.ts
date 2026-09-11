@@ -184,29 +184,29 @@ export const ensureFreshTemplateForTests = (
 export const resetDbCommand = Command.make(
   "reset-db",
   {
-    allowShared: Flag.boolean("allow-shared").pipe(Flag.withDefault(false)),
-    build: Flag.boolean("build").pipe(
+    allowShared: Flag.Boolean("allow-shared").pipe(Flag.withDefault(false)),
+    build: Flag.Boolean("build").pipe(
       Flag.withDefault(false),
       Flag.withDescription("rebuild the Odoo image before running reset containers"),
     ),
-    modules: Flag.string("modules").pipe(
+    modules: Flag.String("modules").pipe(
       Flag.optional,
       Flag.withDescription("comma-separated module list (defaults to recipe initialModules)"),
     ),
-    withoutDemo: Flag.string("without-demo").pipe(Flag.optional),
-    noTemplate: Flag.boolean("no-template").pipe(
+    withoutDemo: Flag.String("without-demo").pipe(Flag.optional),
+    noTemplate: Flag.Boolean("no-template").pipe(
       Flag.withDefault(false),
       Flag.withDescription("full init even when a template snapshot exists (template kept)"),
     ),
-    refreshTemplate: Flag.boolean("refresh-template").pipe(
+    refreshTemplate: Flag.Boolean("refresh-template").pipe(
       Flag.withDefault(false),
       Flag.withDescription("full init and take a fresh template snapshot"),
     ),
-    json: Flag.boolean("json").pipe(
+    json: Flag.Boolean("json").pipe(
       Flag.withDefault(false),
       Flag.withDescription("suppress decorative output; print one final JSON report line"),
     ),
-    config: Flag.string("config").pipe(Flag.optional),
+    config: Flag.String("config").pipe(Flag.optional),
   },
   (flags) =>
     withJsonReport("reset-db", flags.json, (report) =>

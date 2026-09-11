@@ -32,15 +32,15 @@ export const runLogs = (
 export const logsCommand = Command.make(
   "logs",
   {
-    service: Argument.string("service").pipe(
+    service: Argument.String("service").pipe(
       Argument.optional,
       Argument.withDescription("compose service (defaults to the odoo service)"),
     ),
-    follow: Flag.boolean("follow").pipe(
+    follow: Flag.Boolean("follow").pipe(
       Flag.withDefault(false),
       Flag.withDescription("follow log output"),
     ),
-    config: Flag.string("config").pipe(Flag.optional),
+    config: Flag.String("config").pipe(Flag.optional),
   },
   (flags) =>
     Effect.gen(function* () {

@@ -410,31 +410,31 @@ const parseTarget = (raw: string | undefined): Effect.Effect<EjectTarget, EjectE
 export const ejectCommand = Command.make(
   "eject",
   {
-    target: Argument.string("target").pipe(
+    target: Argument.String("target").pipe(
       Argument.optional,
       Argument.withDescription("all (default), dockerfile, or compose"),
     ),
-    dockerfileOut: Flag.string("dockerfile-out").pipe(
+    dockerfileOut: Flag.String("dockerfile-out").pipe(
       Flag.optional,
       Flag.withDescription(`ejected Dockerfile path (default ${DEFAULT_DOCKERFILE_OUT})`),
     ),
-    composeOut: Flag.string("compose-out").pipe(
+    composeOut: Flag.String("compose-out").pipe(
       Flag.optional,
       Flag.withDescription(`ejected compose path (default ${DEFAULT_COMPOSE_OUT})`),
     ),
-    force: Flag.boolean("force").pipe(
+    force: Flag.Boolean("force").pipe(
       Flag.withDefault(false),
       Flag.withDescription("overwrite existing files / commented config"),
     ),
-    writeConfig: Flag.boolean("write-config").pipe(
+    writeConfig: Flag.Boolean("write-config").pipe(
       Flag.withDefault(false),
       Flag.withDescription("rewrite the config in place (comments are lost)"),
     ),
-    json: Flag.boolean("json").pipe(
+    json: Flag.Boolean("json").pipe(
       Flag.withDefault(false),
       Flag.withDescription("print machine-readable JSON"),
     ),
-    config: Flag.string("config").pipe(
+    config: Flag.String("config").pipe(
       Flag.optional,
       Flag.withDescription("explicit config file path"),
     ),

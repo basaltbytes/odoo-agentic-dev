@@ -24,11 +24,11 @@ export const buildPsqlArgs = (
 export const psqlCommand = Command.make(
   "psql",
   {
-    args: Argument.string("args").pipe(
+    args: Argument.String("args").pipe(
       Argument.variadic(),
       Argument.withDescription("extra psql arguments (pass them after --)"),
     ),
-    config: Flag.string("config").pipe(Flag.optional),
+    config: Flag.String("config").pipe(Flag.optional),
   },
   (flags) =>
     Effect.gen(function* () {

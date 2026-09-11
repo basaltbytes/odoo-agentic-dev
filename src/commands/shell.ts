@@ -67,7 +67,7 @@ export const runInteractivePassthrough = (
 export const shellCommand = Command.make(
   "shell",
   {
-    config: Flag.string("config").pipe(Flag.optional),
+    config: Flag.String("config").pipe(Flag.optional),
   },
   (flags) =>
     Effect.gen(function* () {

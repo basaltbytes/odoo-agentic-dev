@@ -162,23 +162,23 @@ const NEXT_STEPS: ReadonlyArray<string> = [
 export const initCommand = Command.make(
   "init",
   {
-    id: Flag.string("id").pipe(
+    id: Flag.String("id").pipe(
       Flag.optional,
       Flag.withDescription("project id (default: derived from the folder name)"),
     ),
-    dbPrefix: Flag.string("db-prefix").pipe(
+    dbPrefix: Flag.String("db-prefix").pipe(
       Flag.optional,
       Flag.withDescription("database prefix (default: derived from the project id)"),
     ),
-    odooVersion: Flag.string("odoo-version").pipe(
+    odooVersion: Flag.String("odoo-version").pipe(
       Flag.withDefault(DEFAULT_ODOO_VERSION),
       Flag.withDescription(`Odoo version (default ${DEFAULT_ODOO_VERSION})`),
     ),
-    force: Flag.boolean("force").pipe(
+    force: Flag.Boolean("force").pipe(
       Flag.withDefault(false),
       Flag.withDescription("overwrite an existing config in the current directory"),
     ),
-    json: Flag.boolean("json").pipe(
+    json: Flag.Boolean("json").pipe(
       Flag.withDefault(false),
       Flag.withDescription("print machine-readable JSON"),
     ),

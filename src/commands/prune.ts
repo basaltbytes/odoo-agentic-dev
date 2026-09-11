@@ -204,32 +204,32 @@ export const reportPrune = (
 export const pruneCommand = Command.make(
   "prune",
   {
-    olderThan: Flag.integer("older-than").pipe(
+    olderThan: Flag.Int("older-than").pipe(
       Flag.optional,
       Flag.withDescription("also prune environments unused for more than <days>"),
     ),
-    allProjects: Flag.boolean("all-projects").pipe(
+    allProjects: Flag.Boolean("all-projects").pipe(
       Flag.withDefault(false),
       Flag.withDescription("every project in the registry (works without a config)"),
     ),
-    yes: Flag.boolean("yes").pipe(
+    yes: Flag.Boolean("yes").pipe(
       Flag.withDefault(false),
       Flag.withDescription("actually remove (without it: dry run, exit 1 when candidates exist)"),
     ),
-    buildCache: Flag.boolean("build-cache").pipe(
+    buildCache: Flag.Boolean("build-cache").pipe(
       Flag.withDefault(false),
       Flag.withDescription("also prune the Docker build cache down to --keep-storage (with --yes)"),
     ),
-    keepStorage: Flag.string("keep-storage").pipe(
+    keepStorage: Flag.String("keep-storage").pipe(
       Flag.optional,
       Flag.withDescription("build-cache size floor to keep (default 10GB)"),
     ),
-    allowShared: Flag.boolean("allow-shared").pipe(Flag.withDefault(false)),
-    json: Flag.boolean("json").pipe(
+    allowShared: Flag.Boolean("allow-shared").pipe(Flag.withDefault(false)),
+    json: Flag.Boolean("json").pipe(
       Flag.withDefault(false),
       Flag.withDescription("print machine-readable JSON"),
     ),
-    config: Flag.string("config").pipe(Flag.optional),
+    config: Flag.String("config").pipe(Flag.optional),
   },
   (flags) =>
     Effect.gen(function* () {
