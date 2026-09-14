@@ -29,6 +29,14 @@ describe("buildComposeModel", () => {
     expect(parse(renderComposeYaml(model))).toEqual(JSON.parse(JSON.stringify(model)));
   });
 
+  it("keeps the database under an explicit PGDATA so postgres 13 to 18+ images all start", () => {
+    // postgres:18+ images abort when a volume sits on their pre-18 default data
+    // directory; an explicit PGDATA below the mount is accepted by every major.
+    const db = model.services["db"] as Record<string, any>;
+    expect(db["environment"]["PGDATA"]).toBe("/var/lib/postgresql/data/pgdata");
+    expect(db["volumes"]).toEqual(["db-data:/var/lib/postgresql/data"]);
+  });
+
   it("uses build+image when a dockerfile is configured", () => {
     const odoo = model.services["odoo"] as Record<string, unknown>;
     expect(odoo["build"]).toEqual({ context: ".", dockerfile: "Dockerfile.odoo" });
