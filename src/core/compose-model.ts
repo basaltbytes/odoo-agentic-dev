@@ -10,6 +10,8 @@ export type ComposeModel = {
 };
 
 export const GENERATED_COMPOSE_RELATIVE_PATH = ".odoo-agentic-dev/compose.generated.yml";
+export const POSTGRES_DATA_MOUNT = "/var/lib/postgresql/data";
+export const POSTGRES_DATA_DIR = `${POSTGRES_DATA_MOUNT}/pgdata`;
 export const POSTGRES_HEALTHCHECK_COMMAND =
   'test "$(cat /proc/1/comm)" = postgres && pg_isready -U odoo -d postgres';
 
@@ -102,14 +104,22 @@ export const buildComposeModel = (
       [dbService]: {
         image: recipe.odoo.postgresImage,
         restart: "unless-stopped",
-        environment: { POSTGRES_USER: "odoo", POSTGRES_PASSWORD: "odoo", POSTGRES_DB: "postgres" },
+        environment: {
+          POSTGRES_USER: "odoo",
+          POSTGRES_PASSWORD: "odoo",
+          POSTGRES_DB: "postgres",
+          // postgres:18+ images refuse a volume mounted on their pre-18 default
+          // data directory (/var/lib/postgresql/data). An explicit PGDATA below the
+          // mount keeps one layout that every major from 13 to 18 accepts.
+          PGDATA: POSTGRES_DATA_DIR,
+        },
         healthcheck: {
           test: ["CMD-SHELL", POSTGRES_HEALTHCHECK_COMMAND],
           interval: "2s",
           timeout: "5s",
           retries: 30,
         },
-        volumes: ["db-data:/var/lib/postgresql/data"],
+        volumes: [`db-data:${POSTGRES_DATA_MOUNT}`],
         labels,
       },
       [odooService]: {

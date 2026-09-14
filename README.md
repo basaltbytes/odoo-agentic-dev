@@ -103,7 +103,7 @@ export default defineConfig({
     version: "18.0",                  // required — image tag, and part of the DB template cache key
     serviceName: "odoo",              // default — compose service to exec/log against
     databaseServiceName: "db",        // default
-    postgresImage: "postgres:16",     // default
+    postgresImage: "postgres:16",     // default; postgres:18 images work too
     build: {                          // default: none — the CLI GENERATES a Dockerfile from this
       aptPackages: ["tesseract-ocr"], //   (FROM odoo:<version>, apt layer, pip layer, then COPYs)
       pipRequirements: ["backend/requirements.txt"],
