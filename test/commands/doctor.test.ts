@@ -147,13 +147,17 @@ const fixturePort = (): number =>
 
 describe("pure helpers", () => {
   it("nodeVersionOk mirrors the npm engine floor", () => {
-    expect(nodeVersionOk("22.22.2")).toBe(true);
-    expect(nodeVersionOk("22.22.1")).toBe(false);
+    expect(nodeVersionOk("22.23.4")).toBe(true);
+    expect(nodeVersionOk("22.23.3")).toBe(false);
     expect(nodeVersionOk("22.15.0")).toBe(false);
     expect(nodeVersionOk("23.0.0")).toBe(false);
-    expect(nodeVersionOk("24.15.0")).toBe(true);
-    expect(nodeVersionOk("24.14.9")).toBe(false);
-    expect(nodeVersionOk("25.0.0")).toBe(true);
+    expect(nodeVersionOk("24.22.1")).toBe(true);
+    expect(nodeVersionOk("24.22.0")).toBe(false);
+    // end-of-life odd line, no security backports
+    expect(nodeVersionOk("25.9.0")).toBe(false);
+    expect(nodeVersionOk("26.12.1")).toBe(true);
+    expect(nodeVersionOk("26.12.0")).toBe(false);
+    expect(nodeVersionOk("27.0.0")).toBe(true);
     expect(nodeVersionOk("21.9.0")).toBe(false);
   });
 

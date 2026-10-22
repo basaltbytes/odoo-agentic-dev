@@ -34,7 +34,7 @@ export type DoctorCheck = {
   readonly detail: string;
 };
 
-const NODE_VERSION_REQUIREMENT = "22.22.2+ on Node 22, or 24.15.0+";
+const NODE_VERSION_REQUIREMENT = "22.23.4+ on Node 22, 24.22.1+ on Node 24, or 26.12.1+";
 
 const atLeast = (
   actual: readonly [number, number, number],
@@ -48,16 +48,18 @@ const atLeast = (
 };
 
 /**
- * Runtime engine floor mirrors package.json and the npm runtime dependency
- * graph. node:sqlite arrives earlier, but npm installs warn below this range.
+ * Runtime engine floor mirrors package.json: the October 2026 security release
+ * of each maintained line. node:sqlite and the npm dependency graph need less;
+ * Node 25 is end-of-life and never received those fixes.
  */
 export const nodeVersionOk = (version: string): boolean => {
   const [major = 0, minor = 0, patch = 0] = version
     .split(".")
     .map((part) => Number.parseInt(part, 10));
   const actual = [major, minor, patch] as const;
-  if (major === 22) return atLeast(actual, [22, 22, 2]);
-  if (major >= 24) return atLeast(actual, [24, 15, 0]);
+  if (major === 22) return atLeast(actual, [22, 23, 4]);
+  if (major === 24) return atLeast(actual, [24, 22, 1]);
+  if (major >= 26) return atLeast(actual, [26, 12, 1]);
   return false;
 };
 
