@@ -17,5 +17,7 @@ runs:
       run: echo "version=$(node -p "require('./package.json').devEngines.packageManager.version")" >> "$GITHUB_OUTPUT"
     - uses: pnpm/action-setup@v4
       with: { version: "${{ steps.pnpm.outputs.version }}" }
+    # check-latest: the runner image's preinstalled Node can lag behind a
+    # security release; without it setup-node keeps the cached older patch.
     - uses: actions/setup-node@v4
-      with: { node-version: "${{ inputs.node-version }}", cache: pnpm }
+      with: { node-version: "${{ inputs.node-version }}", check-latest: true, cache: pnpm }
