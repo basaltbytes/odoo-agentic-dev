@@ -6,7 +6,7 @@ Projects describe themselves with one typed recipe file (`odoo-agentic-dev.confi
 
 ## Requirements
 
-- Node.js 22.22.2+ on the Node 22 line, or Node.js 24.15.0+ (the state registry uses the built-in `node:sqlite` — no native dependency)
+- Node.js 22.23.4+ on the Node 22 line, 24.22.1+ on the Node 24 line, or 26.12.1+ (the state registry uses the built-in `node:sqlite` — no native dependency)
 - npm, pnpm, yarn, or another Node package manager
 - Git
 - Docker with Compose v2 (Docker Desktop on macOS, Docker Engine or Docker Desktop on Linux/WSL2) — `info` works without Docker running
